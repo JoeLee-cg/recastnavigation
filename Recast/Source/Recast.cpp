@@ -341,10 +341,12 @@ void rcMarkWalkableTriangles(rcContext* context, const float walkableSlopeAngle,
 	rcIgnoreUnused(context);
 	rcIgnoreUnused(numVerts);
 
+	// 可行走角度
 	const float walkableThr = cosf(walkableSlopeAngle / 180.0f * RC_PI);
 
 	float norm[3];
 
+	// 三角面角度小于可行走角度，三角形标记可走 triAreaIDs[i]
 	for (int i = 0; i < numTris; ++i)
 	{
 		const int* tri = &tris[i * 3];
@@ -407,22 +409,33 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 
 	rcScopedTimer timer(context, RC_TIMER_BUILD_COMPACTHEIGHTFIELD);
 
+	// 高度域宽
 	const int xSize = heightfield.width;
+	// 高度域长
 	const int zSize = heightfield.height;
+	// span 的总数量
 	const int spanCount = rcGetHeightFieldSpanCount(context, heightfield);
 
 	// Fill in header.
 	compactHeightfield.width = xSize;
 	compactHeightfield.height = zSize;
 	compactHeightfield.spanCount = spanCount;
+	// 移动物体高度
 	compactHeightfield.walkableHeight = walkableHeight;
+	// 移动物体可行走高度差
 	compactHeightfield.walkableClimb = walkableClimb;
+	// 最大区域
 	compactHeightfield.maxRegions = 0;
+	// 高度域包围盒
 	rcVcopy(compactHeightfield.bmin, heightfield.bmin);
 	rcVcopy(compactHeightfield.bmax, heightfield.bmax);
+	// 包围盒要加上移动物体的高度
 	compactHeightfield.bmax[1] += walkableHeight * heightfield.ch;
+	// 格子边长
 	compactHeightfield.cs = heightfield.cs;
+	// 格子高度
 	compactHeightfield.ch = heightfield.ch;
+	// 生成格子数据区
 	compactHeightfield.cells = (rcCompactCell*)rcAlloc(sizeof(rcCompactCell) * xSize * zSize, RC_ALLOC_PERM);
 	if (!compactHeightfield.cells)
 	{
@@ -430,6 +443,7 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 		return false;
 	}
 	memset(compactHeightfield.cells, 0, sizeof(rcCompactCell) * xSize * zSize);
+	// 生成 span 数据区
 	compactHeightfield.spans = (rcCompactSpan*)rcAlloc(sizeof(rcCompactSpan) * spanCount, RC_ALLOC_PERM);
 	if (!compactHeightfield.spans)
 	{
@@ -437,6 +451,7 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 		return false;
 	}
 	memset(compactHeightfield.spans, 0, sizeof(rcCompactSpan) * spanCount);
+	// 生成场地 ID 数据区
 	compactHeightfield.areas = (unsigned char*)rcAlloc(sizeof(unsigned char) * spanCount, RC_ALLOC_PERM);
 	if (!compactHeightfield.areas)
 	{
@@ -452,6 +467,7 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 	const int numColumns = xSize * zSize;
 	for (int columnIndex = 0; columnIndex < numColumns; ++columnIndex)
 	{
+		// 当前格子 span 首节点
 		const rcSpan* span = heightfield.spans[columnIndex];
 			
 		// If there are no spans at this cell, just leave the data to index=0, count=0.
@@ -460,18 +476,28 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 			continue;
 		}
 			
+		// 当前格子数据
 		rcCompactCell& cell = compactHeightfield.cells[columnIndex];
+		// 当前格子 span 起始索引
 		cell.index = currentCellIndex;
+		// 当前格子 span 数量
 		cell.count = 0;
 
+		// 遍历当前格子 span 链表
 		for (; span != NULL; span = span->next)
 		{
+			// 如果当前 span 场地 ID 非空，添加 span
 			if (span->area != RC_NULL_AREA)
 			{
+				// span 地板 z 轴格子坐标
 				const int bot = (int)span->smax;
+				// span 天花板高度 z 轴格子坐标
 				const int top = span->next ? (int)span->next->smin : MAX_HEIGHT;
+				// span 地板
 				compactHeightfield.spans[currentCellIndex].y = (unsigned short)rcClamp(bot, 0, 0xffff);
+				// span 空间高度
 				compactHeightfield.spans[currentCellIndex].h = (unsigned char)rcClamp(top - bot, 0, 0xff);
+				// span 的场地 ID
 				compactHeightfield.areas[currentCellIndex] = span->area;
 				currentCellIndex++;
 				cell.count++;
@@ -480,6 +506,7 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 	}
 	
 	// Find neighbour connections.
+	// 连接相邻的 span
 	const int MAX_LAYERS = RC_NOT_CONNECTED - 1;
 	int maxLayerIndex = 0;
 	const int zStride = xSize; // for readability
@@ -492,23 +519,30 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 			{
 				rcCompactSpan& span = compactHeightfield.spans[i];
 
+				// 遍历当前 span 上下左右四个方向
 				for (int dir = 0; dir < 4; ++dir)
 				{
+					// 初始化当前方向无连接
 					rcSetCon(span, dir, RC_NOT_CONNECTED);
+					// 找出当前方向要邻的格子坐标
 					const int neighborX = x + rcGetDirOffsetX(dir);
 					const int neighborZ = z + rcGetDirOffsetY(dir);
 					// First check that the neighbour cell is in bounds.
 					if (neighborX < 0 || neighborZ < 0 || neighborX >= xSize || neighborZ >= zSize)
 					{
+						// 如果超出高度域范围，跳过
 						continue;
 					}
 
 					// Iterate over all neighbour spans and check if any of the is
 					// accessible from current cell.
+					// 当前方向相邻格子信息
 					const rcCompactCell& neighborCell = compactHeightfield.cells[neighborX + neighborZ * zStride];
+					// 遍历相邻格子的 span
 					for (int k = (int)neighborCell.index, nk = (int)(neighborCell.index + neighborCell.count); k < nk; ++k)
 					{
 						const rcCompactSpan& neighborSpan = compactHeightfield.spans[k];
+						// 两个 span 重叠空间高度的上下表面
 						const int bot = rcMax(span.y, neighborSpan.y);
 						const int top = rcMin(span.y + span.h, neighborSpan.y + neighborSpan.h);
 
@@ -517,12 +551,14 @@ bool rcBuildCompactHeightfield(rcContext* context, const int walkableHeight, con
 						if ((top - bot) >= walkableHeight && rcAbs((int)neighborSpan.y - (int)span.y) <= walkableClimb)
 						{
 							// Mark direction as walkable.
+							// 如果重叠空间的上下表面高度差大于等于 walkableHeight 并且地板之间的高度差小于 walkableClimb，则当前方向是可走的，连接 span
 							const int layerIndex = k - (int)neighborCell.index;
 							if (layerIndex < 0 || layerIndex > MAX_LAYERS)
 							{
 								maxLayerIndex = rcMax(maxLayerIndex, layerIndex);
 								continue;
 							}
+							// span 在 dir 方向的格子，边接其第 layerIndex 个 span
 							rcSetCon(span, dir, layerIndex);
 							break;
 						}

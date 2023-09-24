@@ -468,6 +468,7 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 	int startY = y;
 	int startDir = -1;
 	
+	// 找到起始方向，起始方向为相邻格子不同区域或者无连接的方向
 	for (int i = 0; i < 4; ++i)
 	{
 		const int dir = (i+3)&3;
@@ -478,17 +479,21 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 			break;
 		}
 	}
+	// 没找到超始方向，那么这个格子是内部格子，不是边界
 	if (startDir == -1)
 		return true;
 	
 	int dir = startDir;
+	// 最大遍历次数，w*h 就够了，防止死循环
 	const int maxIter = w*h;
 	
 	int iter = 0;
 	while (iter < maxIter)
 	{
+		// 当前方向 dir 的区域 ID
 		unsigned char rn = getNeighbourReg(layer, x, y, dir);
 		
+		// 把当前格子坐标和当前方向暂存
 		int nx = x;
 		int ny = y;
 		int ndir = dir;
@@ -496,29 +501,40 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 		if (rn != layer.regs[x+y*w])
 		{
 			// Solid edge.
+			// 如果相邻区域不等于当前格子区域，那么当前格子是边界
 			int px = x;
 			int pz = y;
+			// 因为边界只是一条线，是顶点与顶点之间的连接
+			// 所以把格子左下角作为边界的连接点，那么左下角对应的格子才是要添加的顶点格子，就有以下操作
 			switch(dir)
 			{
+				// 如果方向是左，那么上面格子才是要添加的格子
 				case 0: pz++; break;
+				// 如果方向是上，那么右上角才是要添加的格子
 				case 1: px++; pz++; break;
+				// 如果是右，那在右边才是要添加的格子
 				case 2: px++; break;
 			}
+			// 如果方向是下，那就添加当前格子
 			
 			// Try to merge with previous vertex.
+            // 尝试把目标格子添加到边界
 			if (!appendVertex(cont, px, (int)layer.heights[x+y*w], pz,rn))
 				return false;
 			
+            // 顺时针旋转方向，下一次判断新方向是否边界
 			ndir = (dir+1) & 0x3;  // Rotate CW
 		}
 		else
 		{
 			// Move to next.
+            // 如果当前方向上相连的格子跟当前格子是同一个区域，那么跳到下一个格子
 			nx = x + getDirOffsetX(dir);
 			ny = y + getDirOffsetY(dir);
+            // 逆时针旋转得到新方向，从新方向开始遍历
 			ndir = (dir+3) & 0x3;	// Rotate CCW
 		}
-		
+		// 如果循环次数超过所有格子，或者已经回到了起始格子，跳出循环
 		if (iter > 0 && x == startX && y == startY && dir == startDir)
 			break;
 		
@@ -530,6 +546,7 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 	}
 	
 	// Remove last vertex if it is duplicate of the first one.
+    // 如果最后一个格子与起始格子相同，删掉最后一个格子
 	unsigned char* pa = &cont.verts[(cont.nverts-1)*4];
 	unsigned char* pb = &cont.verts[0];
 	if (pa[0] == pb[0] && pa[2] == pb[2])
@@ -748,13 +765,14 @@ static unsigned char getCornerHeight(dtTileCacheLayer& layer,
 dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
-								  dtTileCacheContourSet& lcset)
+								  dtTileCacheContourSet& lcset, dtTileCacheContourSet& tcset)
 {
 	dtAssert(alloc);
 
 	const int w = (int)layer.header->width;
 	const int h = (int)layer.header->height;
 	
+	// 有多少个区域就有多少条边界
 	lcset.nconts = layer.regCount;
 	lcset.conts = (dtTileCacheContour*)alloc->alloc(sizeof(dtTileCacheContour)*lcset.nconts);
 	if (!lcset.conts)
@@ -780,18 +798,22 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 		for (int x = 0; x < w; ++x)
 		{
 			const int idx = x+y*w;
+			// 当前区域 ID
 			const unsigned char ri = layer.regs[idx];
 			if (ri == 0xff)
 				continue;
 			
+			// 当前暂存边界
 			dtTileCacheContour& cont = lcset.conts[ri];
 			
+			// 如果边界已有顶点，跳过
 			if (cont.nverts > 0)
 				continue;
 			
 			cont.reg = ri;
 			cont.area = layer.areas[idx];
 			
+			// 开始描边，得到边界 temp
 			if (!walkContour(layer, x, y, temp))
 			{
 				// Too complex contour.
@@ -799,6 +821,11 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 				return DT_FAILURE | DT_BUFFER_TOO_SMALL;
 			}
 			
+            // 简化边界
+            // 其实边界不需要那么多格子，我们只需要直线的首尾两个格子就好了
+            // 用栅格化的格子来描述倾斜的直线时，是有锯齿的，要去掉锯齿
+            // 消除锯齿：先取线上距离比较远的两个点a/b，这两个点连点成直线 ab，然后遍历这两个点之间的点，如果点 c 到直线 ab 的距离超过 maxError，则保留这个点
+            // 然后连接 a/c 和 c/b，继续递归，最后保留的点就能消除一点的锯齿
 			simplifyContour(temp, maxError);
 			
 			// Store contour.
@@ -831,6 +858,42 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 						dst[3] |= 0x80;
 				}
 			}
+		}
+	}
+
+	tcset.nconts = lcset.nconts;
+	tcset.conts = (dtTileCacheContour*)alloc->alloc(sizeof(dtTileCacheContour) * tcset.nconts);
+	if (!tcset.conts)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	for (int i(0); i < tcset.nconts; ++i)
+	{
+		dtTileCacheContour& scontour = lcset.conts[i];
+		int nverts(0);
+		for (int i(0); i < scontour.nverts; ++i)
+		{
+			unsigned char* vert = &scontour.verts[i * 4];
+			unsigned char nei = vert[3];
+			if (nei & 0x80)
+				continue;
+
+			++nverts;
+		}
+		dtTileCacheContour& dcontour = tcset.conts[i];
+		dcontour.verts = (unsigned char*)alloc->alloc(sizeof(unsigned short) * nverts * 4);
+		for (int i(0), j(0); i < scontour.nverts; ++i)
+		{
+			unsigned char* vert = &scontour.verts[i * 4];
+			unsigned char nei = vert[3];
+			if (nei & 0x80)
+				continue;
+
+			unsigned char* svert = &scontour.verts[i * 4];
+			unsigned char* dvert = &dcontour.verts[j * 4];
+			dvert[0] = svert[0];
+			dvert[1] = svert[1];
+			dvert[2] = svert[2];
+			dvert[3] = svert[3];
+			++ j;
 		}
 	}
 	
@@ -1744,6 +1807,10 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 	return DT_SUCCESS;
 }
 
+dtStatus dtMatchContourSet(dtTileCacheAlloc* alloc, const dtTileCacheContourSet& tcset, dtTileCacheBorderSet& borderset)
+{
+	return DT_SUCCESS;
+}
 
 dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 								  dtTileCacheContourSet& lcset,
@@ -2109,8 +2176,11 @@ dtStatus dtBuildTileCacheLayer(dtTileCacheCompressor* comp,
 							   const unsigned char* cons,
 							   unsigned char** outData, int* outDataSize)
 {
+	// 头信息大小
 	const int headerSize = dtAlign4(sizeof(dtTileCacheLayerHeader));
+	// 格子数量
 	const int gridSize = (int)header->width * (int)header->height;
+	// 压缩后数据总大小，gridSize * 3 包括 heights/areas/cons 三份数据
 	const int maxDataSize = headerSize + comp->maxCompressedSize(gridSize*3);
 	unsigned char* data = (unsigned char*)dtAlloc(maxDataSize, DT_ALLOC_PERM);
 	if (!data)
@@ -2118,9 +2188,11 @@ dtStatus dtBuildTileCacheLayer(dtTileCacheCompressor* comp,
 	memset(data, 0, maxDataSize);
 	
 	// Store header
+	// 拷贝头信息
 	memcpy(data, header, sizeof(dtTileCacheLayerHeader));
 	
 	// Concatenate grid data for compression.
+	// 先创建压缩前的 buffer 数据区
 	const int bufferSize = gridSize*3;
 	unsigned char* buffer = (unsigned char*)dtAlloc(bufferSize, DT_ALLOC_TEMP);
 	if (!buffer)
@@ -2129,12 +2201,15 @@ dtStatus dtBuildTileCacheLayer(dtTileCacheCompressor* comp,
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	}
 
+	// 拷贝数据到 buffer
 	memcpy(buffer, heights, gridSize);
 	memcpy(buffer+gridSize, areas, gridSize);
 	memcpy(buffer+gridSize*2, cons, gridSize);
 	
 	// Compress
+	// 压缩超始内存地址
 	unsigned char* compressed = data + headerSize;
+	// 压缩数据大小
 	const int maxCompressedSize = maxDataSize - headerSize;
 	int compressedSize = 0;
 	dtStatus status = comp->compress(buffer, bufferSize, compressed, maxCompressedSize, &compressedSize);
@@ -2211,6 +2286,7 @@ dtStatus dtDecompressTileCacheLayer(dtTileCacheAlloc* alloc, dtTileCacheCompress
 	layer->heights = grids;
 	layer->areas = grids + gridSize;
 	layer->cons = grids + gridSize*2;
+	// 这个是新加的，在压缩数据里是没有的，后面用来作区域划分
 	layer->regs = grids + gridSize*3;
 	
 	*layerOut = layer;

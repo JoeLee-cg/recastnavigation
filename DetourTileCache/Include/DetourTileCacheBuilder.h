@@ -64,6 +64,13 @@ struct dtTileCacheContourSet
 	dtTileCacheContour* conts;
 };
 
+struct dtTileCacheBorderSet
+{
+	int nborders;
+	int* splits;
+	unsigned char* vertices;
+};
+
 struct dtTileCachePolyMesh
 {
 	int nvp;
@@ -140,7 +147,9 @@ dtStatus dtBuildTileCacheRegions(dtTileCacheAlloc* alloc,
 dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
-								  dtTileCacheContourSet& lcset);
+								  dtTileCacheContourSet& lcset, dtTileCacheContourSet& tcset);
+
+dtStatus dtMatchContourSet(dtTileCacheAlloc* alloc, const dtTileCacheContourSet& tcset, dtTileCacheBorderSet& borderset);
 
 dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 								  dtTileCacheContourSet& lcset,

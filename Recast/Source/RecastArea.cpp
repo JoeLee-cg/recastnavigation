@@ -82,6 +82,7 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 
 	rcScopedTimer timer(context, RC_TIMER_ERODE_AREA);
 
+	// 针对每个 span 的距离场
 	unsigned char* distanceToBoundary = (unsigned char*)rcAlloc(sizeof(unsigned char) * compactHeightfield.spanCount,
 	                                                            RC_ALLOC_TEMP);
 	if (!distanceToBoundary)
@@ -89,25 +90,32 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 		context->log(RC_LOG_ERROR, "erodeWalkableArea: Out of memory 'dist' (%d).", compactHeightfield.spanCount);
 		return false;
 	}
+	// 把距离场初始化为最大值 0xff
 	memset(distanceToBoundary, 0xff, sizeof(unsigned char) * compactHeightfield.spanCount);
 	
 	// Mark boundary cells.
+	// 查找边界 span，标记距离为 0
 	for (int z = 0; z < zSize; ++z)
 	{
 		for (int x = 0; x < xSize; ++x)
 		{
+			// xz 坐标上的格子数据
 			const rcCompactCell& cell = compactHeightfield.cells[x + z * zStride];
+			// 遍历当前格子的所有 span
 			for (int spanIndex = (int)cell.index, maxSpanIndex = (int)(cell.index + cell.count); spanIndex < maxSpanIndex; ++spanIndex)
 			{
 				if (compactHeightfield.areas[spanIndex] == RC_NULL_AREA)
 				{
+					// 如果当前 span 不可走，距离为0
 					distanceToBoundary[spanIndex] = 0;
 					continue;
 				}
+				// 当前 span 数据
 				const rcCompactSpan& span = compactHeightfield.spans[spanIndex];
 
 				// Check that there is a non-null adjacent span in each of the 4 cardinal directions.
 				int neighborCount = 0;
+				// 遍历 span 四个方向，获取相邻 span 数量
 				for (int direction = 0; direction < 4; ++direction)
 				{
 					const int neighborConnection = rcGetCon(span, direction);
@@ -127,7 +135,8 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 					neighborCount++;
 				}
 				
-				// At least one missing neighbour, so this is a boundary cell.
+				// At least one missing neighbor, so this is a boundary cell.
+				// 如果并非四个方向都有相连的 span ，则这个 span 是边界，距离为 0
 				if (neighborCount != 4)
 				{
 					distanceToBoundary[spanIndex] = 0;
@@ -138,7 +147,13 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 	
 	unsigned char newDistance;
 	
+	// 上面已经找到所有边界 span，把它们距离都设成 0了
+	// 下面就通过从左下到右上，从右上到左下两个 pass 计算它们到边界的距离
+	// 第一个 pass 会得到距离左下边界的距离，那么越靠右上距离就越大
+	// 第二个 pass 得到距离右上边界面的距离，两个 pass 结果取最小值就是离边界的距离了
+
 	// Pass 1
+	// 从左下角开始，计算 span 左下方的距离
 	for (int z = 0; z < zSize; ++z)
 	{
 		for (int x = 0; x < xSize; ++x)
@@ -152,29 +167,37 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 				if (rcGetCon(span, 0) != RC_NOT_CONNECTED)
 				{
 					// (-1,0)
+					// 左边 span
 					const int aX = x + rcGetDirOffsetX(0);
 					const int aY = z + rcGetDirOffsetY(0);
 					const int aIndex = (int)compactHeightfield.cells[aX + aY * xSize].index + rcGetCon(span, 0);
 					const rcCompactSpan& aSpan = compactHeightfield.spans[aIndex];
+
+					// 两个 span 之间水平距离加2
 					newDistance = (unsigned char)rcMin((int)distanceToBoundary[aIndex] + 2, 255);
+					// 取最小值
 					if (newDistance < distanceToBoundary[spanIndex])
 					{
 						distanceToBoundary[spanIndex] = newDistance;
 					}
 
 					// (-1,-1)
+					// 左下角 span
 					if (rcGetCon(aSpan, 3) != RC_NOT_CONNECTED)
 					{
 						const int bX = aX + rcGetDirOffsetX(3);
 						const int bY = aY + rcGetDirOffsetY(3);
 						const int bIndex = (int)compactHeightfield.cells[bX + bY * xSize].index + rcGetCon(aSpan, 3);
+						// 对角距离加3
 						newDistance = (unsigned char)rcMin((int)distanceToBoundary[bIndex] + 3, 255);
+						// 取最小值
 						if (newDistance < distanceToBoundary[spanIndex])
 						{
 							distanceToBoundary[spanIndex] = newDistance;
 						}
 					}
 				}
+				// 下方和右下方，同上
 				if (rcGetCon(span, 3) != RC_NOT_CONNECTED)
 				{
 					// (0,-1)
@@ -206,6 +229,7 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 	}
 
 	// Pass 2
+	// 从右上角开始，计算 span 右上方的距离
 	for (int z = zSize - 1; z >= 0; --z)
 	{
 		for (int x = xSize - 1; x >= 0; --x)
@@ -275,6 +299,7 @@ bool rcErodeWalkableArea(rcContext* context, const int erosionRadius, rcCompactH
 	const unsigned char minBoundaryDistance = (unsigned char)(erosionRadius * 2);
 	for (int spanIndex = 0; spanIndex < compactHeightfield.spanCount; ++spanIndex)
 	{
+		// 如果离边界太小，标记为不可走
 		if (distanceToBoundary[spanIndex] < minBoundaryDistance)
 		{
 			compactHeightfield.areas[spanIndex] = RC_NULL_AREA;
@@ -442,6 +467,7 @@ void rcMarkConvexPolyArea(rcContext* context, const float* verts, const int numV
 	const int zStride = xSize; // For readability
 
 	// Compute the bounding box of the polygon
+	// 计算场地包围盒
 	float bmin[3];
 	float bmax[3];
 	rcVcopy(bmin, verts);
@@ -455,6 +481,7 @@ void rcMarkConvexPolyArea(rcContext* context, const float* verts, const int numV
 	bmax[1] = maxY;
 
 	// Compute the grid footprint of the polygon 
+	// 把包围盒转换成格子坐标
 	int minx = (int)((bmin[0] - compactHeightfield.bmin[0]) / compactHeightfield.cs);
 	int miny = (int)((bmin[1] - compactHeightfield.bmin[1]) / compactHeightfield.ch);
 	int minz = (int)((bmin[2] - compactHeightfield.bmin[2]) / compactHeightfield.cs);
@@ -463,6 +490,7 @@ void rcMarkConvexPolyArea(rcContext* context, const float* verts, const int numV
 	int maxz = (int)((bmax[2] - compactHeightfield.bmin[2]) / compactHeightfield.cs);
 
 	// Early-out if the polygon lies entirely outside the grid.
+	// 如果场地包围盒与高度域包围盒无重叠，返回
 	if (maxx < 0) { return; }
     if (minx >= xSize) { return; }
     if (maxz < 0) { return; }
@@ -486,12 +514,14 @@ void rcMarkConvexPolyArea(rcContext* context, const float* verts, const int numV
 				rcCompactSpan& span = compactHeightfield.spans[spanIndex];
 
 				// Skip if span is removed.
+				// 不可行走，跳过
 				if (compactHeightfield.areas[spanIndex] == RC_NULL_AREA)
 				{
 					continue;
 				}
 
 				// Skip if y extents don't overlap.
+				// 包围盒与 span 高度没重叠，跳过 
 				if ((int)span.y < miny || (int)span.y > maxy)
 				{
 					continue;
@@ -503,6 +533,7 @@ void rcMarkConvexPolyArea(rcContext* context, const float* verts, const int numV
 					compactHeightfield.bmin[2] + ((float)z + 0.5f) * compactHeightfield.cs
 				};
 				
+				// 把 span 包围盒的 xz 平面中点投影到多边形，如果在多边形内，就标记场地 ID
 				if (pointInPoly(numVerts, verts, point))
 				{
 					compactHeightfield.areas[spanIndex] = areaId;
