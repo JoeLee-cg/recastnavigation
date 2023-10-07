@@ -927,9 +927,11 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 		return DT_FAILURE | DT_ALREADY_OCCUPIED;
 		
 	// Allocate a tile.
+    // 在 FreeList 里找出空闲的 dtMeshTile
 	dtMeshTile* tile = 0;
 	if (!lastRef)
 	{
+        // lastRef 是空的话，直接从 FreeList 里面找
 		if (m_nextFree)
 		{
 			tile = m_nextFree;
@@ -970,11 +972,15 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	
 	// Insert tile into the position lut.
+    // 计算哈希值，把它添加到查找表里
 	int h = computeTileHash(header->x, header->y, m_tileLutMask);
+    // 把查找表里哈希值为 h 的 dtMeshTile 存到 next
 	tile->next = m_posLookup[h];
+    // 把 tile 放在查找表的头节点
 	m_posLookup[h] = tile;
 	
 	// Patch header pointers.
+    // 从头信息获取各种缓存数据的大小
 	const int headerSize = dtAlign4(sizeof(dtMeshHeader));
 	const int vertsSize = dtAlign4(sizeof(float)*3*header->vertCount);
 	const int polysSize = dtAlign4(sizeof(dtPoly)*header->polyCount);
@@ -986,13 +992,22 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 	const int offMeshLinksSize = dtAlign4(sizeof(dtOffMeshConnection)*header->offMeshConCount);
 	
 	unsigned char* d = data + headerSize;
+    // 根据数据大小偏移值得到数据
+    // 顶点数据
 	tile->verts = dtGetThenAdvanceBufferPointer<float>(d, vertsSize);
+    // 多边形数据
 	tile->polys = dtGetThenAdvanceBufferPointer<dtPoly>(d, polysSize);
+    // 链接数据
 	tile->links = dtGetThenAdvanceBufferPointer<dtLink>(d, linksSize);
+    // 细节网格数据
 	tile->detailMeshes = dtGetThenAdvanceBufferPointer<dtPolyDetail>(d, detailMeshesSize);
+    // 细节网格顶点
 	tile->detailVerts = dtGetThenAdvanceBufferPointer<float>(d, detailVertsSize);
+    // 细节三角形数据
 	tile->detailTris = dtGetThenAdvanceBufferPointer<unsigned char>(d, detailTrisSize);
+    // 层次包围盒数据
 	tile->bvTree = dtGetThenAdvanceBufferPointer<dtBVNode>(d, bvtreeSize);
+    // 离线网格连接
 	tile->offMeshCons = dtGetThenAdvanceBufferPointer<dtOffMeshConnection>(d, offMeshLinksSize);
 
 	// If there are no items in the bvtree, reset the tree pointer.
@@ -1000,12 +1015,14 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 		tile->bvTree = 0;
 
 	// Build links freelist
+    // 生成 link 的 FreeList
 	tile->linksFreeList = 0;
 	tile->links[header->maxLinkCount-1].next = DT_NULL_LINK;
 	for (int i = 0; i < header->maxLinkCount-1; ++i)
 		tile->links[i].next = i+1;
 
 	// Init tile.
+    // 初始化 tile
 	tile->header = header;
 	tile->data = data;
 	tile->dataSize = dataSize;

@@ -542,6 +542,7 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 			else
 			{
 				// Normal connection
+                // 因为 0 表示边界，没有相邻多边形，所以这里对多边形索引加 1，后面要用的时候如果 neis 非 0，就减 1 获得多边形索引
 				p->neis[j] = src[nvp+j]+1;
 			}
 			

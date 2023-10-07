@@ -779,16 +779,19 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	
 	unsigned char* navData = 0;
 	int navDataSize = 0;
+    // 创建 dtMeshTile
 	if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
 		return DT_FAILURE;
 
 	// Remove existing tile.
+    // 把旧的 tile 移除掉
 	navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
 
 	// Add new tile, or leave the location empty.
 	if (navData)
 	{
 		// Let the navmesh own the data.
+        // 添加 tile data
 		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
 		if (dtStatusFailed(status))
 		{
