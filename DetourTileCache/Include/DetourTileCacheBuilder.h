@@ -128,6 +128,9 @@ dtStatus dtDecompressTileCacheLayer(dtTileCacheAlloc* alloc, dtTileCacheCompress
 dtTileCacheContourSet* dtAllocTileCacheContourSet(dtTileCacheAlloc* alloc);
 void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* cset);
 
+dtTileCacheBorderSet* dtAllocTileCacheBorderSet(dtTileCacheAlloc* alloc);
+void dtFreeTileCacheBorderSet(dtTileCacheAlloc* alloc, dtTileCacheBorderSet* cset);
+
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc);
 void dtFreeTileCachePolyMesh(dtTileCacheAlloc* alloc, dtTileCachePolyMesh* lmesh);
 
@@ -144,10 +147,17 @@ dtStatus dtBuildTileCacheRegions(dtTileCacheAlloc* alloc,
 								 dtTileCacheLayer& layer,
 								 const int walkableClimb);
 
+bool WalkBorder(const dtTileCacheContour* conts, 
+				unsigned char* vflag,
+				unsigned char* ttemp, 
+				const int& maxverts, 
+				const int& sic,
+				const int& siv, 
+				int& nv);
 dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
-								  dtTileCacheContourSet& lcset, dtTileCacheContourSet& tcset);
+								  dtTileCacheContourSet& lcset, dtTileCacheBorderSet& tcset);
 
 dtStatus dtMatchContourSet(dtTileCacheAlloc* alloc, const dtTileCacheContourSet& tcset, dtTileCacheBorderSet& borderset);
 

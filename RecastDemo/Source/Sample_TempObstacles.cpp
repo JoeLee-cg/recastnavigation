@@ -550,14 +550,14 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 			layer = 0;
 			dtFreeTileCacheContourSet(alloc, lcset);
 			lcset = 0;
-            dtFreeTileCacheContourSet(alloc, tcset);
+            dtFreeTileCacheBorderSet(alloc, tcset);
             tcset = 0;
 			dtFreeTileCachePolyMesh(alloc, lmesh);
 			lmesh = 0;
 		}
 		struct dtTileCacheLayer* layer;
 		struct dtTileCacheContourSet* lcset;
-        struct dtTileCacheContourSet* tcset;
+        struct dtTileCacheBorderSet* tcset;
 		struct dtTileCachePolyMesh* lmesh;
 		struct dtTileCacheAlloc* alloc;
 	};
@@ -600,7 +600,7 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 		}
 		
 		bc.lcset = dtAllocTileCacheContourSet(talloc);
-        bc.tcset = dtAllocTileCacheContourSet(talloc);
+        bc.tcset = dtAllocTileCacheBorderSet(talloc);
 		if (!bc.lcset || !bc.tcset)
 			return;
 		status = dtBuildTileCacheContours(talloc, *bc.layer, walkableClimbVx,

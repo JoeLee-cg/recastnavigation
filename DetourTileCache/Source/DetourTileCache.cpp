@@ -50,14 +50,14 @@ struct NavMeshTileBuildContext
 		layer = 0;
 		dtFreeTileCacheContourSet(alloc, lcset);
 		lcset = 0;
-		dtFreeTileCacheContourSet(alloc, tcset);
+		dtFreeTileCacheBorderSet(alloc, tcset);
 		tcset = 0;
 		dtFreeTileCachePolyMesh(alloc, lmesh);
 		lmesh = 0;
 	}
 	struct dtTileCacheLayer* layer;
 	struct dtTileCacheContourSet* lcset;
-	struct dtTileCacheContourSet* tcset;
+	struct dtTileCacheBorderSet* tcset;
 	struct dtTileCachePolyMesh* lmesh;
 	struct dtTileCacheAlloc* alloc;
 };
@@ -726,7 +726,7 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	
 	// 对区域进行描边
 	bc.lcset = dtAllocTileCacheContourSet(m_talloc);
-	bc.tcset = dtAllocTileCacheContourSet(m_talloc);
+	bc.tcset = dtAllocTileCacheBorderSet(m_talloc);
 	if (!bc.lcset || !bc.tcset)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	status = dtBuildTileCacheContours(m_talloc, *bc.layer, walkableClimbVx,
@@ -737,11 +737,13 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
 	if (!bc.lmesh)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	// 构造多边形
 	status = dtBuildTileCachePolyMesh(m_talloc, *bc.lcset, *bc.lmesh);
 	if (dtStatusFailed(status))
 		return status;
 	
 	// Early out if the mesh tile is empty.
+	// 先清除之前生成的 tile
 	if (!bc.lmesh->npolys)
 	{
 		// Remove existing tile.

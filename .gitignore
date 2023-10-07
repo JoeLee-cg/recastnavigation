@@ -53,3 +53,4 @@ build
 ## IDE files
 .idea/
 cmake-build-*/
+RecastDemo/Bin/all_tiles_navmesh.bin

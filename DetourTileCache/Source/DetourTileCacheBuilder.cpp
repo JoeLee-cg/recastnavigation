@@ -83,6 +83,25 @@ void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* c
 	alloc->free(cset);
 }
 
+dtTileCacheBorderSet* dtAllocTileCacheBorderSet(dtTileCacheAlloc* alloc)
+{
+	dtAssert(alloc);
+
+	dtTileCacheBorderSet* cset = (dtTileCacheBorderSet*)alloc->alloc(sizeof(dtTileCacheBorderSet));
+	memset(cset, 0, sizeof(dtTileCacheBorderSet));
+	return cset;
+}
+
+void dtFreeTileCacheBorderSet(dtTileCacheAlloc* alloc, dtTileCacheBorderSet* cset)
+{
+	dtAssert(alloc);
+
+	if (!cset) return;
+	alloc->free(cset->splits);
+	alloc->free(cset->vertices);
+	alloc->free(cset);
+}
+
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc)
 {
 	dtAssert(alloc);
@@ -518,7 +537,9 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 			// 如果方向是下，那就添加当前格子
 			
 			// Try to merge with previous vertex.
-            // 尝试把目标格子添加到边界
+            // 尝试把目标格子 x/y/z 和 相邻区域 ID rn 添加到边界
+			// 如果这个格子跟上两个格子在同一上水平或垂直直线上时，只更新上一个格的位置
+			// 否则添加新点
 			if (!appendVertex(cont, px, (int)layer.heights[x+y*w], pz,rn))
 				return false;
 			
@@ -583,6 +604,7 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 {
 	cont.npoly = 0;
 	
+	// 找到边界中区域过渡的分割点
 	for (int i = 0; i < cont.nverts; ++i)
 	{
 		int j = (i+1) % cont.nverts;
@@ -649,12 +671,14 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 		// opposite segments.
 		if (bx > ax || (bx == ax && bz > az))
 		{
+			// 如果下一点在当前点的右侧或正上方，那么终点是 bi ，按逆时针走
 			cinc = 1;
 			ci = (ai+cinc) % cont.nverts;
 			endi = bi;
 		}
 		else
 		{
+			// 否则终点是 ai ，按顺时针走
 			cinc = cont.nverts-1;
 			ci = (bi+cinc) % cont.nverts;
 			endi = ai;
@@ -675,6 +699,7 @@ static void simplifyContour(dtTempContour& cont, const float maxError)
 		
 		// If the max deviation is larger than accepted error,
 		// add new point, else continue to next segment.
+		// 如果最大距离大于 maxError ，添加新点
 		if (maxi != -1 && maxd > (maxError*maxError))
 		{
 			cont.npoly++;
@@ -718,11 +743,16 @@ static unsigned char getCornerHeight(dtTileCacheLayer& layer,
 	
 	int n = 0;
 	
+	// 取其与左，左下，下方格子四个格子的最高高度
+	// 外部 tile 连接方向
 	unsigned char portal = 0xf;
+	// 四个格子最高高度
 	unsigned char height = 0;
+	// 上一个区域 ID
 	unsigned char preg = 0xff;
+	// 是否四个格子
 	bool allSameReg = true;
-	
+
 	for (int dz = -1; dz <= 0; ++dz)
 	{
 		for (int dx = -1; dx <= 0; ++dx)
@@ -733,9 +763,11 @@ static unsigned char getCornerHeight(dtTileCacheLayer& layer,
 			{
 				const int idx  = px + pz*w;
 				const int lh = (int)layer.heights[idx];
+				// 取高度差小于等于 walkableClibm 和可走的格子
 				if (dtAbs(lh-y) <= walkableClimb && layer.areas[idx] != DT_TILECACHE_NULL_AREA)
 				{
 					height = dtMax(height, (unsigned char)lh);
+					// 外部连接方向
 					portal &= (layer.cons[idx] >> 4);
 					if (preg != 0xff && preg != layer.regs[idx])
 						allSameReg = false;
@@ -746,12 +778,18 @@ static unsigned char getCornerHeight(dtTileCacheLayer& layer,
 		}
 	}
 	
+	// 外部连接方向数量
 	int portalCount = 0;
 	for (int dir = 0; dir < 4; ++dir)
 		if (portal & (1<<dir))
 			portalCount++;
 	
 	shouldRemove = false;
+	// 如果选取格子数量大于1并且外部连接方向只有一个并且所有格子都是同一个区域里的，应该移除
+	//   o
+	// x o
+	// o
+	// 对于外部连接 x 点应该需要删除的
 	if (n > 1 && portalCount == 1 && allSameReg)
 	{
 		shouldRemove = true;
@@ -760,12 +798,68 @@ static unsigned char getCornerHeight(dtTileCacheLayer& layer,
 	return height;
 }
 
+bool WalkBorder(const dtTileCacheContour* conts,
+				unsigned char* vflag,
+				unsigned char* ttemp,
+				const int& maxverts,
+				const int& sic,
+				const int& siv, 
+				int& nv)
+{
+	int snv(nv);
+	int iter(maxverts), icont(sic), ivert(siv);
+	while (iter > 0)
+	{
+		const dtTileCacheContour& ccont(conts[icont]);
+		int iflag(icont * maxverts + ivert);
+		if (vflag[iflag] & 0x01)
+			continue;
 
+		vflag[iflag] &= 0x01;
+		unsigned char* bv(nullptr);
+		unsigned char* v(&ccont.verts[ivert * 5]);
+		if (v[5] == 0xff || v[5] >= 0xf8)
+		{
+			bv = v;
+			ivert = ivert == ccont.nverts - 1 ? 0 : ivert + 1;
+		}
+		else
+		{
+			const dtTileCacheContour& ncont(conts[v[5]]);
+			int j(01);
+			for (; j < ncont.nverts; ++j)
+			{
+				unsigned char* tnv(&ncont.verts[j * 5]);
+                if (tnv[0] == v[0] && tnv[2] == v[2])
+				{
+					bv = tnv;
+					break;
+				}
+			}
+			dtAssert(bv);
+			icont = v[5];
+			ivert = j == ncont.nverts - 1 ? 0 : j + 1;
+		}
+		if (icont == sic && ivert == siv)
+			break;
+
+		unsigned char* tv(&ttemp[nv++]);
+		tv[0] = bv[0];
+		tv[1] = bv[1];
+		tv[2] = bv[2];
+		tv[3] = bv[3];
+		tv[4] = icont;
+
+		--iter;
+	}
+
+	return nv > snv;
+}
 // TODO: move this somewhere else, once the layer meshing is done.
 dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
-								  dtTileCacheContourSet& lcset, dtTileCacheContourSet& tcset)
+								  dtTileCacheContourSet& lcset, dtTileCacheBorderSet& tcset)
 {
 	dtAssert(alloc);
 
@@ -778,6 +872,13 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 	if (!lcset.conts)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	memset(lcset.conts, 0, sizeof(dtTileCacheContour)*lcset.nconts);
+
+	// 边界缓存
+	int nconts(layer.regCount);
+	dtTileCacheContour* conts((dtTileCacheContour*)alloc->alloc(sizeof(dtTileCacheContour) * nconts));
+	if (!conts)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	memset(conts, 0, sizeof(dtTileCacheContour)*nconts);
 	
 	// Allocate temp buffer for contour tracing.
 	const int maxTempVerts = (w+h)*2 * 2; // Twice around the layer.
@@ -792,6 +893,7 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 
 	dtTempContour temp(tempVerts, maxTempVerts, tempPoly, maxTempVerts);
 	
+	int mnverts(0);
 	// Find contours.
 	for (int y = 0; y < h; ++y)
 	{
@@ -814,6 +916,7 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 			cont.area = layer.areas[idx];
 			
 			// 开始描边，得到边界 temp
+			// 顺时针是外边界，逆时针是空洞边界
 			if (!walkContour(layer, x, y, temp))
 			{
 				// Too complex contour.
@@ -824,8 +927,8 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
             // 简化边界
             // 其实边界不需要那么多格子，我们只需要直线的首尾两个格子就好了
             // 用栅格化的格子来描述倾斜的直线时，是有锯齿的，要去掉锯齿
-            // 消除锯齿：先取线上距离比较远的两个点a/b，这两个点连点成直线 ab，然后遍历这两个点之间的点，如果点 c 到直线 ab 的距离超过 maxError，则保留这个点
-            // 然后连接 a/c 和 c/b，继续递归，最后保留的点就能消除一点的锯齿
+            // 消除锯齿：先取线上距离比较远的两个点 a/b ，这两个点连点成直线 ab ，然后遍历这两个点之间的点，如果点 c 到直线 ab 的距离超过 maxError，则保留这个点
+            // 然后连接 a/c 和 c/b ，继续递归，最后保留的点就能消除一点的锯齿
 			simplifyContour(temp, maxError);
 			
 			// Store contour.
@@ -836,11 +939,14 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 				if (!cont.verts)
 					return DT_FAILURE | DT_OUT_OF_MEMORY;
 				
+				int tnverts(0);
 				for (int i = 0, j = temp.nverts-1; i < temp.nverts; j=i++)
 				{
 					unsigned char* dst = &cont.verts[j*4];
 					unsigned char* v = &temp.verts[j*4];
 					unsigned char* vn = &temp.verts[i*4];
+
+					// walkContour 的时候相邻区域 ID 是存在当前点的下一个点上的
 					unsigned char nei = vn[3]; // The neighbour reg is stored at segment vertex of a segment. 
 					bool shouldRemove = false;
 					unsigned char lh = getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2],
@@ -853,50 +959,99 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 					// Store portal direction and remove status to the fourth component.
 					dst[3] = 0x0f;
 					if (nei != 0xff && nei >= 0xf8)
+					{
 						dst[3] = nei - 0xf8;
+
+						if (temp.nverts > 2)
+						{
+							unsigned char pnei = v[3];
+							unsigned char* nvert = &temp.verts[(i == temp.nverts - 1 ? 0 : i + 1) * 4];
+							unsigned char nnei = nvert[3];
+							if (pnei != 0xff && pnei >= 0xf8 && nnei != 0xff && nnei >= 0xf8)
+								dst[3] |= 0x40;
+						}
+					}
 					if (shouldRemove)
 						dst[3] |= 0x80;
+
+					if (!(dst[3] & 0x40))
+						++tnverts;
+				}
+				if (tnverts > 0 && conts->nverts > 2)
+				{
+					mnverts = dtMax(tnverts, mnverts);
+					dtTileCacheContour& dcontour = conts[ri];
+					dcontour.nverts = 0;
+					dcontour.area = cont.area;
+					dcontour.reg = cont.reg;
+					dcontour.verts = (unsigned char*)alloc->alloc(sizeof(unsigned short) * tnverts * 5);
+					for (int i(1), j(0); j < cont.nverts; ++j, ++i)
+					{
+						unsigned char* svert(&cont.verts[j * 4]);
+						if (svert[3] & 0x40)
+							continue;
+
+						if (i == cont.nverts)
+							i = 0;
+
+						unsigned char* dvert(&dcontour.verts[dcontour.nverts++ * 4]);
+						dvert[0] = svert[0];
+						dvert[1] = svert[1];
+						dvert[2] = svert[2];
+						dvert[3] = svert[3];
+						dvert[4] = temp.verts[i * 4 + 3];
+					}
 				}
 			}
 		}
 	}
-
-	tcset.nconts = lcset.nconts;
-	tcset.conts = (dtTileCacheContour*)alloc->alloc(sizeof(dtTileCacheContour) * tcset.nconts);
-	if (!tcset.conts)
-		return DT_FAILURE | DT_OUT_OF_MEMORY;
-	for (int i(0); i < tcset.nconts; ++i)
-	{
-		dtTileCacheContour& scontour = lcset.conts[i];
-		int nverts(0);
-		for (int i(0); i < scontour.nverts; ++i)
-		{
-			unsigned char* vert = &scontour.verts[i * 4];
-			unsigned char nei = vert[3];
-			if (nei & 0x80)
-				continue;
-
-			++nverts;
-		}
-		dtTileCacheContour& dcontour = tcset.conts[i];
-		dcontour.verts = (unsigned char*)alloc->alloc(sizeof(unsigned short) * nverts * 4);
-		for (int i(0), j(0); i < scontour.nverts; ++i)
-		{
-			unsigned char* vert = &scontour.verts[i * 4];
-			unsigned char nei = vert[3];
-			if (nei & 0x80)
-				continue;
-
-			unsigned char* svert = &scontour.verts[i * 4];
-			unsigned char* dvert = &dcontour.verts[j * 4];
-			dvert[0] = svert[0];
-			dvert[1] = svert[1];
-			dvert[2] = svert[2];
-			dvert[3] = svert[3];
-			++ j;
-		}
-	}
 	
+	if (mnverts > 0)
+	{
+		int maxverts(mnverts* nconts);
+
+		dtFixedArray<unsigned char> vflag(alloc, maxverts);
+		if (!vflag)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+		dtFixedArray<unsigned char> ttemp(alloc, maxverts * 5);
+		if (!ttemp)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+		dtFixedArray<int> splits(alloc, nconts);
+		if (!splits)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+		
+		int nv(0);
+		int nsplit(0);
+		for (int i(0); i < nconts; ++i)
+		{
+			dtTileCacheContour &cont(conts[i]);
+			for (int j(0); j < cont.nverts; ++j)
+			{
+				if (vflag[i * maxverts + j] & 0x01)
+					continue;
+
+				splits[nsplit++] = nv;
+				if (!WalkBorder(conts, vflag, ttemp, maxverts, i, j, nv))
+					--nsplit;
+			}
+		}
+		tcset.nborders = nsplit;
+
+		tcset.splits = (int*)alloc->alloc(sizeof(int) * nsplit);
+		if (!tcset.splits)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+		memcpy(tcset.splits, splits, sizeof(int)* nsplit);
+		tcset.vertices = (unsigned char*)alloc->alloc(sizeof(unsigned char) * nv);
+
+		if (!tcset.vertices)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+		memcpy(tcset.vertices, ttemp, sizeof(unsigned char) * nv * 5);
+	}
+
+	alloc->free(conts);
 	return DT_SUCCESS;
 }	
 
@@ -977,6 +1132,7 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 			if (t[j] == DT_TILECACHE_NULL_IDX) break;
 			unsigned short v0 = t[j];
 			unsigned short v1 = (j+1 >= MAX_VERTS_PER_POLY || t[j+1] == DT_TILECACHE_NULL_IDX) ? t[0] : t[j+1];
+			// 相邻两个多边形的共享边 v0-v1 的排序一定是相反的，所以这里先选择 v0 < v1 的边，下面再选择 v1 > v0 的边作配对
 			if (v0 < v1)
 			{
 				rcEdge& edge = edges[edgeCount];
@@ -1005,12 +1161,15 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 			if (v0 > v1)
 			{
 				bool found = false;
+				// 查找已经缓存的边
 				for (unsigned short e = firstEdge[v1]; e != DT_TILECACHE_NULL_IDX; e = nextEdge[e])
 				{
 					rcEdge& edge = edges[e];
 					if (edge.vert[1] == v0 && edge.poly[0] == edge.poly[1])
 					{
+						// 找到这条边以后，把边的第二个多边设为当前多边形
 						edge.poly[1] = (unsigned short)i;
+						// 把边的第二个多边形的顶点索引设为当前顶点索引
 						edge.polyEdge[1] = (unsigned short)j;
 						found = true;
 						break;
@@ -1019,6 +1178,7 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 				if (!found)
 				{
 					// Matching edge not found, it is an open edge, add it.
+					// 如果没找到配对的边，那么这条边是开放边，没有相邻多边形
 					rcEdge& edge = edges[edgeCount];
 					edge.vert[0] = v1;
 					edge.vert[1] = v0;
@@ -1050,6 +1210,7 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 			if (dir == 0xf)
 				continue;
 			
+			// 如果相邻区域方向是水平的
 			if (dir == 0 || dir == 2)
 			{
 				// Find matching vertical edge
@@ -1063,16 +1224,22 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 				{
 					rcEdge& e = edges[m];
 					// Skip connected edges.
+					// 跳过两个多边形共享的边
 					if (e.poly[0] != e.poly[1])
 						continue;
+
+					// 边的顶点 eva 和 evb
 					const unsigned short* eva = &verts[e.vert[0]*3];
 					const unsigned short* evb = &verts[e.vert[1]*3];
+					// 因为 tile 是矩形，对于连接方向水平的外部连接的边，它们的 x 肯定是一样的
 					if (eva[0] == x && evb[0] == x)
 					{
 						unsigned short ezmin = eva[2];
 						unsigned short ezmax = evb[2];
 						if (ezmin > ezmax)
 							dtSwap(ezmin, ezmax);
+
+						// 如果 z 方向有重叠，那么这是个外部连接的边
 						if (overlapRangeExl(zmin,zmax, ezmin, ezmax))
 						{
 							// Reuse the other polyedge to store dir.
@@ -1084,6 +1251,7 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 			else
 			{
 				// Find matching vertical edge
+				// 同理处理相邻方向为垂直方向的边
 				const unsigned short z = (unsigned short)va[2];
 				unsigned short xmin = (unsigned short)va[0];
 				unsigned short xmax = (unsigned short)vb[0];
@@ -1116,19 +1284,28 @@ static bool buildMeshAdjacency(dtTileCacheAlloc* alloc,
 	
 	
 	// Store adjacency
+	// 保存多边形相邻数据
+	// 对于 mesh 里的多边形是存了双份边，会保存每条边相邻多边形索引
 	for (int i = 0; i < edgeCount; ++i)
 	{
 		const rcEdge& e = edges[i];
+		// 如果有相邻多边形
 		if (e.poly[0] != e.poly[1])
 		{
+			// 多边形 p0
 			unsigned short* p0 = &polys[e.poly[0]*MAX_VERTS_PER_POLY*2];
+			// 多边形 p1
 			unsigned short* p1 = &polys[e.poly[1]*MAX_VERTS_PER_POLY*2];
+			// 多边形 p0 的第 e.polyEdge[0] 边相邻多边形索引为 e.poly[1]
 			p0[MAX_VERTS_PER_POLY + e.polyEdge[0]] = e.poly[1];
+			// 多边形 p1 的第 e.polyEdge[1] 边相邻多边形索引为 e.poly[0]
 			p1[MAX_VERTS_PER_POLY + e.polyEdge[1]] = e.poly[0];
 		}
+		// 如果这条边是外部连接其它 tile 的边
 		else if (e.polyEdge[1] != 0xff)
 		{
 			unsigned short* p0 = &polys[e.poly[0]*MAX_VERTS_PER_POLY*2];
+			// 多边形 p0 的第 e.polyEdge[0] 边值设为 （连接方向 | 0x8000）
 			p0[MAX_VERTS_PER_POLY + e.polyEdge[0]] = 0x8000 | (unsigned short)e.polyEdge[1];
 		}
 		
@@ -1151,6 +1328,7 @@ inline int area2(const unsigned char* a, const unsigned char* b, const unsigned 
 //	The arguments are negated to ensure that they are 0/1
 //	values.  Then the bitwise Xor operator may apply.
 //	(This idea is due to Michael Baldwin.)
+// x y 一个为 true，一个为 false，返回 true
 inline bool xorb(bool x, bool y)
 {
 	return !x ^ !y;
@@ -1168,6 +1346,7 @@ inline bool leftOn(const unsigned char* a, const unsigned char* b, const unsigne
 	return area2(a, b, c) <= 0;
 }
 
+// 是否共线
 inline bool collinear(const unsigned char* a, const unsigned char* b, const unsigned char* c)
 {
 	return area2(a, b, c) == 0;
@@ -1220,6 +1399,9 @@ static bool vequal(const unsigned char* a, const unsigned char* b)
 
 // Returns T iff (v_i, v_j) is a proper internal *or* external
 // diagonal of P, *ignoring edges incident to v_i and v_j*.
+// c  b
+// a  d
+// 判断是否存在和 i j 相交的边
 static bool diagonalie(int i, int j, int n, const unsigned char* verts, const unsigned short* indices)
 {
 	const unsigned char* d0 = &verts[(indices[i] & 0x7fff) * 4];
@@ -1230,14 +1412,16 @@ static bool diagonalie(int i, int j, int n, const unsigned char* verts, const un
 	{
 		int k1 = next(k, n);
 		// Skip edges incident to i or j
+		// 只要其中一点是 i j ，跳过
 		if (!((k == i) || (k1 == i) || (k == j) || (k1 == j)))
 		{
 			const unsigned char* p0 = &verts[(indices[k] & 0x7fff) * 4];
 			const unsigned char* p1 = &verts[(indices[k1] & 0x7fff) * 4];
 			
+			// 只要其中一点是 i j ，跳过
 			if (vequal(d0, p0) || vequal(d1, p0) || vequal(d0, p1) || vequal(d1, p1))
 				continue;
-			
+			// d0d1 和 p0p1 相交	
 			if (intersect(d0, d1, p0, p1))
 				return false;
 		}
@@ -1255,10 +1439,12 @@ static bool	inCone(int i, int j, int n, const unsigned char* verts, const unsign
 	const unsigned char* pin1 = &verts[(indices[prev(i, n)] & 0x7fff) * 4];
 	
 	// If P[i] is a convex vertex [ i+1 left or on (i-1,i) ].
+	// 如果 pi 是凸的，判断 pin1 是否在 pi -> pi1 -> pj 内部
 	if (leftOn(pin1, pi, pi1))
 		return left(pi, pj, pin1) && left(pj, pi, pi1);
 	// Assume (i-1,i,i+1) not collinear.
 	// else P[i] is reflex.
+	// 如果 pi 是凹的，判断 pj 是否在 pin1 -> pi -> pi1 内部
 	return !(leftOn(pi, pj, pi1) && leftOn(pj, pi, pin1));
 }
 
@@ -1275,6 +1461,8 @@ static int triangulate(int n, const unsigned char* verts, unsigned short* indice
 	unsigned short* dst = tris;
 	
 	// The last bit of the index is used to indicate if the vertex can be removed.
+	// 查找合适顶点 i1
+	// 对于连续的三个顶点 i -> i1 -> i2，线段 i-i2 与边界其它所有边不相交
 	for (int i = 0; i < n; i++)
 	{
 		int i1 = next(i, n);
@@ -1283,10 +1471,12 @@ static int triangulate(int n, const unsigned char* verts, unsigned short* indice
 			indices[i1] |= 0x8000;
 	}
 	
+	// 遍历所有点，直到点少于3个
 	while (n > 3)
 	{
 		int minLen = -1;
 		int mini = -1;
+		// 查找合适顶点中相邻两个点顶距离最近的顶点
 		for (int i = 0; i < n; i++)
 		{
 			int i1 = next(i, n);
@@ -1318,6 +1508,7 @@ static int triangulate(int n, const unsigned char* verts, unsigned short* indice
 			return -ntris;
 		}
 		
+		// 把这三个顶点添加到三角形顶点索引中
 		int i = mini;
 		int i1 = next(i, n);
 		int i2 = next(i1, n);
@@ -1328,10 +1519,12 @@ static int triangulate(int n, const unsigned char* verts, unsigned short* indice
 		ntris++;
 		
 		// Removes P[i1] by copying P[i+1]...P[n-1] left one index.
+		// pi1 已经构建了三角形，删除 pi1
 		n--;
 		for (int k = i1; k < n; k++)
 			indices[k] = indices[k+1];
 		
+		// 删掉 pi1 后，更新 pi1 和 prev pi1
 		if (i1 >= n) i1 = 0;
 		i = prev(i1,n);
 		// Update diagonal flags.
@@ -1346,6 +1539,7 @@ static int triangulate(int n, const unsigned char* verts, unsigned short* indice
 			indices[i1] &= 0x7fff;
 	}
 	
+	// 添加剩下的最后一个三角形
 	// Append the remaining triangle.
 	*dst++ = indices[0] & 0x7fff;
 	*dst++ = indices[1] & 0x7fff;
@@ -1373,14 +1567,18 @@ inline bool uleft(const unsigned short* a, const unsigned short* b, const unsign
 static int getPolyMergeValue(unsigned short* pa, unsigned short* pb,
 							 const unsigned short* verts, int& ea, int& eb)
 {
+	// 多边形 pa 的顶点数
 	const int na = countPolyVerts(pa);
+	// 多边形 pb 的顶点数
 	const int nb = countPolyVerts(pb);
 	
 	// If the merged polygon would be too big, do not merge.
+	// 如果合并后顶点数超过最大顶点数
 	if (na+nb-2 > MAX_VERTS_PER_POLY)
 		return -1;
 	
 	// Check if the polygons share an edge.
+	// 判断两个多边形是否共边
 	ea = -1;
 	eb = -1;
 	
@@ -1406,10 +1604,12 @@ static int getPolyMergeValue(unsigned short* pa, unsigned short* pb,
 	}
 	
 	// No common edge, cannot merge.
+	// 如果多边形不共边，不能合并
 	if (ea == -1 || eb == -1)
 		return -1;
 	
 	// Check to see if the merged polygon would be convex.
+	// 判断合并后的多边形是否凸多边形
 	unsigned short va, vb, vc;
 	
 	va = pa[(ea+na-1) % na];
@@ -1423,13 +1623,15 @@ static int getPolyMergeValue(unsigned short* pa, unsigned short* pb,
 	vc = pa[(ea+2) % na];
 	if (!uleft(&verts[va*3], &verts[vb*3], &verts[vc*3]))
 		return -1;
-	
+
+	// 共同边的两个顶点 va 、vb
 	va = pa[ea];
 	vb = pa[(ea+1)%na];
 	
 	int dx = (int)verts[va*3+0] - (int)verts[vb*3+0];
 	int dy = (int)verts[va*3+2] - (int)verts[vb*3+2];
 	
+	// 返回共边长度平方
 	return dx*dx + dy*dy;
 }
 
@@ -1490,6 +1692,10 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 		}
 		if (numRemoved)
 		{
+			// 这里 numRemoved + 1 是因为一个顶点连接两条边
+			// 所以删除一个顶点要减两条边
+			// 正常来说，删除了一个顶点，连接相邻的顶点就能生成一条边，
+			// 但是有一种情况，一个三角形的顶点不与其它多边形共享的话，删了这个顶点，那么这个三角形就只有一条边了
 			numRemainingEdges += numVerts-(numRemoved+1);
 		}
 	}
@@ -1498,6 +1704,7 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 	// This can happen for example when a tip of a triangle is marked
 	// as deletion, but there are no other polys that share the vertex.
 	// In this case, the vertex should not be removed.
+	// 对于三角形其中一个顶点不与其它多边形共享的情况，如果剩下的边小于等于2，这个点是不能删除的，return
 	if (numRemainingEdges <= 2)
 		return false;
 	
@@ -1509,7 +1716,7 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 	// Find edges which share the removed vertex.
 	unsigned short edges[MAX_REM_EDGES];
 	int nedges = 0;
-	
+	// 找出所有与移除顶点相连的边
 	for (int i = 0; i < mesh.npolys; ++i)
 	{
 		unsigned short* p = &mesh.polys[i*MAX_VERTS_PER_POLY*2];
@@ -1521,11 +1728,13 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 			if (p[j] == rem || p[k] == rem)
 			{
 				// Arrange edge so that a=rem.
+				// 让 a 恒为移除点
 				int a = p[j], b = p[k];
 				if (b == rem)
 					dtSwap(a,b);
 				
 				// Check if the edge exists
+				// 判断边是否已经存在了
 				bool exists = false;
 				for (int m = 0; m < nedges; ++m)
 				{
@@ -1533,11 +1742,13 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 					if (e[1] == b)
 					{
 						// Exists, increment vertex share count.
+						// 如果 e[2] 大于1，那么这条边是两个多边形共享的
 						e[2]++;
 						exists = true;
 					}
 				}
 				// Add new edge.
+				// 不存在添加新的边
 				if (!exists)
 				{
 					unsigned short* e = &edges[nedges*3];
@@ -1553,6 +1764,13 @@ static bool canRemoveVertex(dtTileCachePolyMesh& mesh, const unsigned short rem)
 	// There should be no more than 2 open edges.
 	// This catches the case that two non-adjacent polygons
 	// share the removed vertex. In that case, do not remove the vertex.
+	// open edge 是指这条边只是一个多边形的边，不与其它多边形共享
+	// 对于存在两边开放边共享待移除顶点的情况时，这个顶点是不能移除的
+	//		---
+	//		| |
+	//		--x--
+	//        | |
+	//        ---
 	int numOpenEdges = 0;
 	for (int i = 0; i < nedges; ++i)
 	{
@@ -1597,6 +1815,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 		if (hasRem)
 		{
 			// Collect edges which does not touch the removed vertex.
+			// 保存这个多边形不与待移除顶点连接的边
 			for (int j = 0, k = nv-1; j < nv; k = j++)
 			{
 				if (p[j] != rem && p[k] != rem)
@@ -1611,6 +1830,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 				}
 			}
 			// Remove the polygon.
+			// 删除多边形
 			unsigned short* p2 = &mesh.polys[(mesh.npolys-1)*MAX_VERTS_PER_POLY*2];
 			memcpy(p,p2,sizeof(unsigned short)*MAX_VERTS_PER_POLY);
 			memset(p+MAX_VERTS_PER_POLY,0xff,sizeof(unsigned short)*MAX_VERTS_PER_POLY);
@@ -1621,6 +1841,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 	}
 	
 	// Remove vertex.
+	// 删除顶点
 	for (int i = (int)rem; i < mesh.nverts - 1; ++i)
 	{
 		mesh.verts[i*3+0] = mesh.verts[(i+1)*3+0];
@@ -1630,6 +1851,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 	mesh.nverts--;
 	
 	// Adjust indices to match the removed vertex layout.
+	// 调整多边形顶点索引
 	for (int i = 0; i < mesh.npolys; ++i)
 	{
 		unsigned short* p = &mesh.polys[i*MAX_VERTS_PER_POLY*2];
@@ -1637,24 +1859,29 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 		for (int j = 0; j < nv; ++j)
 			if (p[j] > rem) p[j]--;
 	}
+	// 调整缓存边的索引
 	for (int i = 0; i < nedges; ++i)
 	{
 		if (edges[i*3+0] > rem) edges[i*3+0]--;
 		if (edges[i*3+1] > rem) edges[i*3+1]--;
 	}
 	
+	// 如果缓存边等于0，返回
 	if (nedges == 0)
 		return DT_SUCCESS;
 	
 	// Start with one vertex, keep appending connected
 	// segments to the start and end of the hole.
+	// 把缓存 edges 的顶点连接成 hole
 	pushBack(edges[0], hole, nhole);
 	pushBack(edges[2], harea, nharea);
 	
+	// 循环遍历，直到所有边的顶点都连接到 hole
 	while (nedges)
 	{
 		bool match = false;
 		
+		// 遍历所有边，把边的顶点连起来
 		for (int i = 0; i < nedges; ++i)
 		{
 			const unsigned short ea = edges[i*3+0];
@@ -1695,7 +1922,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 			break;
 	}
 	
-	
+	// 准备三角化的数据
 	unsigned short tris[MAX_REM_EDGES*3];
 	unsigned char tverts[MAX_REM_EDGES*3];
 	unsigned short tpoly[MAX_REM_EDGES*3];
@@ -1712,6 +1939,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 	}
 	
 	// Triangulate the hole.
+	// 对 hole 进行三角形分割
 	int ntris = triangulate(nhole, tverts, tpoly, tris);
 	if (ntris < 0)
 	{
@@ -1726,6 +1954,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 	unsigned char pareas[MAX_REM_EDGES];
 	
 	// Build initial polygons.
+	// 用三角形初始化多边形数据
 	int npolys = 0;
 	memset(polys, 0xff, ntris*MAX_VERTS_PER_POLY*sizeof(unsigned short));
 	for (int j = 0; j < ntris; ++j)
@@ -1744,6 +1973,7 @@ static dtStatus removeVertex(dtTileCachePolyMesh& mesh, const unsigned short rem
 		return DT_SUCCESS;
 	
 	// Merge polygons.
+	// 合并多边形，跟之前合并多边形一样的算法
 	int maxVertsPerPoly = MAX_VERTS_PER_POLY;
 	if (maxVertsPerPoly > 3)
 	{
@@ -1818,20 +2048,26 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 {
 	dtAssert(alloc);
 	
+	// 最大顶点数
 	int maxVertices = 0;
+	// 最大三角面数
 	int maxTris = 0;
+	// 每条边界最大顶点数
 	int maxVertsPerCont = 0;
 	for (int i = 0; i < lcset.nconts; ++i)
 	{
 		// Skip null contours.
+		// 跳过小于三个顶点的边界
 		if (lcset.conts[i].nverts < 3) continue;
 		maxVertices += lcset.conts[i].nverts;
+		// 三角形个数等于顶点数减2
 		maxTris += lcset.conts[i].nverts - 2;
 		maxVertsPerCont = dtMax(maxVertsPerCont, lcset.conts[i].nverts);
 	}
 
 	// TODO: warn about too many vertices?
 	
+	// 多边形最多6个顶点
 	mesh.nvp = MAX_VERTS_PER_POLY;
 	
 	dtFixedArray<unsigned char> vflags(alloc, maxVertices);
@@ -1886,6 +2122,7 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 	if (!polys)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	
+	// 遍历每一条边界
 	for (int i = 0; i < lcset.nconts; ++i)
 	{
 		dtTileCacheContour& cont = lcset.conts[i];
@@ -1895,6 +2132,7 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 			continue;
 		
 		// Triangulate contour
+		// 划分三角形
 		for (int j = 0; j < cont.nverts; ++j)
 			indices[j] = (unsigned short)j;
 		
@@ -1919,6 +2157,7 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 		}
 		
 		// Build initial polygons.
+		// 用三角形初始化多边形，后面会合并三角形
 		int npolys = 0;
 		memset(polys, 0xff, sizeof(unsigned short) * maxVertsPerCont * MAX_VERTS_PER_POLY);
 		for (int j = 0; j < ntris; ++j)
@@ -1937,11 +2176,14 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 		
 		// Merge polygons.
 		int maxVertsPerPoly =MAX_VERTS_PER_POLY ;
+		// 如果多边形的最大顶点数大于3，尝试合并多边形
+		// 合并后的多边形必须满足：1、两个多边形共边；2、合并后是凸多边形；3、合并后的顶点数不超过最大顶点数
 		if (maxVertsPerPoly > 3)
 		{
 			for(;;)
 			{
 				// Find best polygons to merge.
+				// 查找最合适合并的多边形：多边形的共同边最长并满足合并条件
 				int bestMergeVal = 0;
 				int bestPa = 0, bestPb = 0, bestEa = 0, bestEb = 0;
 				
@@ -1964,12 +2206,15 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 					}
 				}
 				
+				// 存在最合适的两个多边形，合并
 				if (bestMergeVal > 0)
 				{
 					// Found best, merge.
 					unsigned short* pa = &polys[bestPa*MAX_VERTS_PER_POLY];
 					unsigned short* pb = &polys[bestPb*MAX_VERTS_PER_POLY];
+					// 把多边形顶点合并到 pa
 					mergePolys(pa, pb, bestEa, bestEb);
+					// 把最后一个多边形拷贝到 pb ，npolys --
 					memcpy(pb, &polys[(npolys-1)*MAX_VERTS_PER_POLY], sizeof(unsigned short)*MAX_VERTS_PER_POLY);
 					npolys--;
 				}
@@ -2003,11 +2248,14 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 		{
 			if (!canRemoveVertex(mesh, (unsigned short)i))
 				continue;
+			// 开始移除顶点。移除顶点后剩下的顶点会形成一个新的多边形，缓存到 hole 里面
+			// 然后对 hole 再重复进行上面的分割三角形、合并多边形的步骤
 			dtStatus status = removeVertex(mesh, (unsigned short)i, maxTris);
 			if (dtStatusFailed(status))
 				return status;
 			// Remove vertex
 			// Note: mesh.nverts is already decremented inside removeVertex()!
+			// 删除顶点后，需要更新 vflags 里的数据
 			for (int j = i; j < mesh.nverts; ++j)
 				vflags[j] = vflags[j+1];
 			--i;
@@ -2015,6 +2263,7 @@ dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 	}
 	
 	// Calculate adjacency.
+	// 构建相邻多边形
 	if (!buildMeshAdjacency(alloc, mesh.polys, mesh.npolys, mesh.verts, mesh.nverts, lcset))
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 		
