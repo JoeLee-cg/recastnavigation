@@ -112,18 +112,18 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	const int w = chf.width;
 	const int h = chf.height;
 	
-	// 创建每一个 span 对应的区域 ID 数据区
+	// ����ÿһ�� span ��Ӧ������ ID ������
 	rcScopedDelete<unsigned char> srcReg((unsigned char*)rcAlloc(sizeof(unsigned char)*chf.spanCount, RC_ALLOC_TEMP));
 	if (!srcReg)
 	{
 		ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'srcReg' (%d).", chf.spanCount);
 		return false;
 	}
-	// 初始化区域 ID 为 0xff
+	// ��ʼ������ ID Ϊ 0xff
 	memset(srcReg,0xff,sizeof(unsigned char)*chf.spanCount);
 	
-	// 创建 sweep 数据区， 每一行为一组 sweep ，逐行扫描
-	// 每一个 sweep 可以看作是这一行的一个区域
+	// ���� sweep �������� ÿһ��Ϊһ�� sweep ������ɨ��
+	// ÿһ�� sweep ���Կ�������һ�е�һ������
 	const int nsweeps = chf.width;
 	rcScopedDelete<rcLayerSweepSpan> sweeps((rcLayerSweepSpan*)rcAlloc(sizeof(rcLayerSweepSpan)*nsweeps, RC_ALLOC_TEMP));
 	if (!sweeps)
@@ -134,12 +134,12 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	
 	
 	// Partition walkable area into monotone regions.
-	// prevCount 是每个区域与其它区域相连的 span 的数量
+	// prevCount ��ÿ���������������������� span ������
 	int prevCount[256];
-	// 区域 ID 从 0 开始
+	// ���� ID �� 0 ��ʼ
 	unsigned char regId = 0;
 
-	// 从左下角开始遍历 span ，剔除 四边的 border
+	// �����½ǿ�ʼ���� span ���޳� �ıߵ� border
 	for (int y = borderSize; y < h-borderSize; ++y)
 	{
 		memset(prevCount,0,sizeof(int)*regId);
@@ -149,97 +149,97 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 		{
 			const rcCompactCell& c = chf.cells[x+y*w];
 			
-			// 遍历当前格子的 span
+			// ������ǰ���ӵ� span
 			for (int i = (int)c.index, ni = (int)(c.index+c.count); i < ni; ++i)
 			{
 				const rcCompactSpan& s = chf.spans[i];
 
-				// 不可走区域，跳过
+				// ��������������
 				if (chf.areas[i] == RC_NULL_AREA) continue;
 
-				// 初始化区域 ID 为 0xff
+				// ��ʼ������ ID Ϊ 0xff
 				unsigned char sid = 0xff;
 
 				// -x
-				// 如果左边存在相连 span
+				// �����ߴ������� span
 				if (rcGetCon(s, 0) != RC_NOT_CONNECTED)
 				{
 					const int ax = x + rcGetDirOffsetX(0);
 					const int ay = y + rcGetDirOffsetY(0);
 					const int ai = (int)chf.cells[ax+ay*w].index + rcGetCon(s, 0);
 
-					// 如果左边 span 可走并且其区域 ID 已赋值，则把当前 span 与其设为同一区域 ID
+					// ������ span ���߲��������� ID �Ѹ�ֵ����ѵ�ǰ span ������Ϊͬһ���� ID
 					if (chf.areas[ai] != RC_NULL_AREA && srcReg[ai] != 0xff)
 						sid = srcReg[ai];
 				}
 				
-				// 如果 sid 还未初始化
+				// ��� sid ��δ��ʼ��
 				if (sid == 0xff)
 				{
-					// 用本行 sweep id 作为其区域 ID
+					// �ñ��� sweep id ��Ϊ������ ID
 					sid = sweepId++;
-					// 相邻区域 ID
+					// �������� ID
 					sweeps[sid].nei = 0xff;
-					// 与相邻区域连接的 span 数量
+					// �������������ӵ� span ����
 					sweeps[sid].ns = 0;
 				}
 				
 				// -y
-				// 如果下方存在相连 span
+				// ����·��������� span
 				if (rcGetCon(s,3) != RC_NOT_CONNECTED)
 				{
 					const int ax = x + rcGetDirOffsetX(3);
 					const int ay = y + rcGetDirOffsetY(3);
 					const int ai = (int)chf.cells[ax+ay*w].index + rcGetCon(s, 3);
 
-					// 下方 span 区域 ID
+					// �·� span ���� ID
 					const unsigned char nr = srcReg[ai];
-					// 如果下方 span 已有区域
+					// ����·� span ��������
 					if (nr != 0xff)
 					{
 						// Set neighbour when first valid neighbour is encoutered.
-						// 如果当前没有邻接区域，设置邻接区域 ID 为 nr
+						// �����ǰû���ڽ����������ڽ����� ID Ϊ nr
 						if (sweeps[sid].ns == 0)
 							sweeps[sid].nei = nr;
 						
-						// 如果当前邻接区域与下方 span 区域相同
+						// �����ǰ�ڽ��������·� span ������ͬ
 						if (sweeps[sid].nei == nr)
 						{
 							// Update existing neighbour
-							// 增加连接 span 的数量
+							// �������� span ������
 							sweeps[sid].ns++;
-							// 增加 nr 区域连接 span 数量
+							// ���� nr �������� span ����
 							prevCount[nr]++;
 						}
 						else
 						{
 							// This is hit if there is nore than one neighbour.
 							// Invalidate the neighbour.
-							// 如果下方邻接区域不止一个，则让其邻接区域无效
-							// 这样会导致后续的 sweeps[sid].ns 和 prevCount 不会增加
+							// ����·��ڽ�����ֹһ�����������ڽ�������Ч
+							// �����ᵼ�º����� sweeps[sid].ns �� prevCount ��������
 							sweeps[sid].nei = 0xff;
 						}
 					}
 				}
-				// 更新 srcReg[i]
+				// ���� srcReg[i]
 				srcReg[i] = sid;
 			}
 		}
 		
 		// Create unique ID.
-		// 根据当前行的 sweep id 创建全局唯一的区域 ID
+		// ���ݵ�ǰ�е� sweep id ����ȫ��Ψһ������ ID
 		for (int i = 0; i < sweepId; ++i)
 		{
 			// If the neighbour is set and there is only one continuous connection to it,
 			// the sweep will be merged with the previous one, else new region is created.
 			if (sweeps[i].nei != 0xff && prevCount[sweeps[i].nei] == (int)sweeps[i].ns)
 			{
-				// 把当前 sweep 归并到相邻区域需要满足两个条件：
-				// 1、如果存在相邻区域，并且相邻区域只有一个（上面在不止一个相邻区域的时候，把 sweeps[i].nei 设成了 0xff）
-				// 2、并且相邻区域连接外部区域的 span 数量等于当前 sweep 连接的 span 数量时
-				// 条件1、2分别应对两种情况：
-				// 1、一个长 sweep 对应下方两个短区域
-				// 2、两个短 sweep 对应下方一个长区域
+				// �ѵ�ǰ sweep �鲢������������Ҫ��������������
+				// 1����������������򣬲�����������ֻ��һ���������ڲ�ֹһ�����������ʱ�򣬰� sweeps[i].nei ����� 0xff��
+				// 2�������������������ⲿ����� span �������ڵ�ǰ sweep ���ӵ� span ����ʱ
+				// ����1��2�ֱ�Ӧ�����������
+				// 1��һ���� sweep ��Ӧ�·�����������
+				// 2�������� sweep ��Ӧ�·�һ��������
 				sweeps[i].id = sweeps[i].nei;
 			}
 			else
@@ -249,19 +249,19 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 					ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Region ID overflow.");
 					return false;
 				}
-				// 否则把当前 sweep 设置成一个新的区域
+				// ����ѵ�ǰ sweep ���ó�һ���µ�����
 				sweeps[i].id = regId++;
 			}
 		}
 		
 		// Remap local sweep ids to region ids.
-		// 对于本行 span ，srcReg 里还是保存着 sweep id ，需要更新为新的唯一区域 ID 
+		// ���ڱ��� span ��srcReg �ﻹ�Ǳ����� sweep id ����Ҫ����Ϊ�µ�Ψһ���� ID 
 		for (int x = borderSize; x < w-borderSize; ++x)
 		{
 			const rcCompactCell& c = chf.cells[x+y*w];
 			for (int i = (int)c.index, ni = (int)(c.index+c.count); i < ni; ++i)
 			{
-				// 如果当前 span 赋予了 sweep id
+				// �����ǰ span ������ sweep id
 				if (srcReg[i] != 0xff)
 					srcReg[i] = sweeps[srcReg[i]].id;
 			}
@@ -269,7 +269,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	}
 
 	// Allocate and init layer regions.
-	// 生成分层区域集的数据区
+	// ���ɷֲ����򼯵�������
 	const int nregs = (int)regId;
 	rcScopedDelete<rcLayerRegion> regs((rcLayerRegion*)rcAlloc(sizeof(rcLayerRegion)*nregs, RC_ALLOC_TEMP));
 	if (!regs)
@@ -278,65 +278,65 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 		return false;
 	}
 	memset(regs, 0, sizeof(rcLayerRegion)*nregs);
-	// 初始化层级数据
+	// ��ʼ���㼶����
 	for (int i = 0; i < nregs; ++i)
 	{
-		// 层级 ID
+		// �㼶 ID
 		regs[i].layerId = 0xff;
-		// 当前层级最小高度
+		// ��ǰ�㼶��С�߶�
 		regs[i].ymin = 0xffff;
-		// 当前层级最大高度
+		// ��ǰ�㼶���߶�
 		regs[i].ymax = 0;
 	}
 	
 	// Find region neighbours and overlapping regions.
-	// 查找相邻区域和重叠区域
+	// ��������������ص�����
 	for (int y = 0; y < h; ++y)
 	{
 		for (int x = 0; x < w; ++x)
 		{
 			const rcCompactCell& c = chf.cells[x+y*w];
 			
-			// 先按当前格子每一个 span 分层，缓存在 lregs
+			// �Ȱ���ǰ����ÿһ�� span �ֲ㣬������ lregs
 			unsigned char lregs[RC_MAX_LAYERS];
 			int nlregs = 0;
 			
-			// 查找相邻区域
+			// ������������
 			for (int i = (int)c.index, ni = (int)(c.index+c.count); i < ni; ++i)
 			{
-				// 当前 span
+				// ��ǰ span
 				const rcCompactSpan& s = chf.spans[i];
-				// 当前 span 的区域 ID
+				// ��ǰ span ������ ID
 				const unsigned char ri = srcReg[i];
 				if (ri == 0xff) continue;
 				
-				// 更新层级最小和最大高度
+				// ���²㼶��С�����߶�
 				regs[ri].ymin = rcMin(regs[ri].ymin, s.y);
 				regs[ri].ymax = rcMax(regs[ri].ymax, s.y);
 				
 				// Collect all region layers.
-				// 缓存当前层的区域 ID
+				// ���浱ǰ������� ID
 				if (nlregs < RC_MAX_LAYERS)
 					lregs[nlregs++] = ri;
 				
 				// Update neighbours
-				// 更新相邻 span
+				// �������� span
 				for (int dir = 0; dir < 4; ++dir)
 				{
-					// 当前方向有连接
+					// ��ǰ����������
 					if (rcGetCon(s, dir) != RC_NOT_CONNECTED)
 					{
 						const int ax = x + rcGetDirOffsetX(dir);
 						const int ay = y + rcGetDirOffsetY(dir);
 						const int ai = (int)chf.cells[ax+ay*w].index + rcGetCon(s, dir);
-						// 当前方向连接的 span 的区域 ID
+						// ��ǰ�������ӵ� span ������ ID
 						const unsigned char rai = srcReg[ai];
 						if (rai != 0xff && rai != ri)
 						{
 							// Don't check return value -- if we cannot add the neighbor
 							// it will just cause a few more regions to be created, which
 							// is fine.
-							// 如果相邻 span 存在区域 ID 并且与当前 span 区域不相同，添加相邻区域
+							// ������� span �������� ID �����뵱ǰ span ������ͬ�������������
 							addUnique(regs[ri].neis, regs[ri].nneis, RC_MAX_NEIS, rai);
 						}
 					}
@@ -345,19 +345,19 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 			}
 			
 			// Update overlapping regions.
-			// 查找重叠区域
+			// �����ص�����
 			for (int i = 0; i < nlregs-1; ++i)
 			{
 				for (int j = i+1; j < nlregs; ++j)
 				{
-					// i j 分别为上下两个 span 的区域 ID
+					// i j �ֱ�Ϊ�������� span ������ ID
 					if (lregs[i] != lregs[j])
 					{
-						// 如果上下两个 span 的区域 ID 不一样
+						// ����������� span ������ ID ��һ��
 						rcLayerRegion& ri = regs[lregs[i]];
 						rcLayerRegion& rj = regs[lregs[j]];
 
-						// 互相添加重叠的区域 ID
+						// ��������ص������� ID
 						if (!addUnique(ri.layers, ri.nlayers, RC_MAX_LAYERS, lregs[j]) ||
 							!addUnique(rj.layers, rj.nlayers, RC_MAX_LAYERS, lregs[i]))
 						{
@@ -372,77 +372,77 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	}
 	
 	// Create 2D layers from regions.
-	// 创建区域的平面层级
+	// ���������ƽ��㼶
 	unsigned char layerId = 0;
 	
 	static const int MAX_STACK = 64;
 	unsigned char stack[MAX_STACK];
 	int nstack = 0;
 	
-	// 遍历每一个区域
+	// ����ÿһ������
 	for (int i = 0; i < nregs; ++i)
 	{
-		// 根区域
+		// ������
 		rcLayerRegion& root = regs[i];
 		// Skip already visited.
-		// 如果这个区域已级设置了层级，跳过
+		// �����������Ѽ������˲㼶������
 		if (root.layerId != 0xff)
 			continue;
 
 		// Start search.
-		// 设置层级
+		// ���ò㼶
 		root.layerId = layerId;
-		// 这是当前层级的根区域
+		// ���ǵ�ǰ�㼶�ĸ�����
 		root.base = 1;
 		
-		// 入栈
+		// ��ջ
 		nstack = 0;
 		stack[nstack++] = (unsigned char)i;
 		
-		// 查找同一层级的所有区域
+		// ����ͬһ�㼶����������
 		while (nstack)
 		{
 			// Pop front
-			// 出栈
+			// ��ջ
 			rcLayerRegion& reg = regs[stack[0]];
 			nstack--;
 			for (int j = 0; j < nstack; ++j)
 				stack[j] = stack[j+1];
 			
-			// 遍历相邻的区域
+			// �������ڵ�����
 			const int nneis = (int)reg.nneis;
 			for (int j = 0; j < nneis; ++j)
 			{
 				const unsigned char nei = reg.neis[j];
-				// 相邻区域
+				// ��������
 				rcLayerRegion& regn = regs[nei];
 				// Skip already visited.
-				// 如果相邻区域已级设置了层级，跳过
+				// ������������Ѽ������˲㼶������
 				if (regn.layerId != 0xff)
 					continue;
 				// Skip if the neighbour is overlapping root region.
-				// 如果这个区域与当前层级的所有区域有重叠，跳过
+				// �����������뵱ǰ�㼶�������������ص�������
 				if (contains(root.layers, root.nlayers, nei))
 					continue;
 				// Skip if the height range would become too large.
 				const int ymin = rcMin(root.ymin, regn.ymin);
 				const int ymax = rcMax(root.ymax, regn.ymax);
-				// 如果把 regn 合并到当前层级之后，最小最大高度差超过255，跳过
+				// ����� regn �ϲ�����ǰ�㼶֮����С���߶Ȳ��255������
 				if ((ymax - ymin) >= 255)
 					 continue;
 
-				// 如果堆栈还没满，合并区域到当前层级
+				// �����ջ��û�����ϲ����򵽵�ǰ�㼶
 				if (nstack < MAX_STACK)
 				{
 					// Deepen
-					// 入栈
+					// ��ջ
 					stack[nstack++] = (unsigned char)nei;
 					
 					// Mark layer id
-					// 设置当前层级 ID
+					// ���õ�ǰ�㼶 ID
 					regn.layerId = layerId;
 					// Merge current layers to root.
-					// regn 重叠的其它区域合并到当前层级的 root 区域
+					// regn �ص�����������ϲ�����ǰ�㼶�� root ����
 					for (int k = 0; k < regn.nlayers; ++k)
 					{
 						if (!addUnique(root.layers, root.nlayers, RC_MAX_LAYERS, regn.layers[k]))
@@ -451,7 +451,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 							return false;
 						}
 					}
-					// 更新层级的最小最大高度
+					// ���²㼶����С���߶�
 					root.ymin = rcMin(root.ymin, regn.ymin);
 					root.ymax = rcMax(root.ymax, regn.ymax);
 				}
@@ -462,19 +462,19 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	}
 	
 	// Merge non-overlapping regions that are close in height.
-	// 合并不重叠并且相差高度小于 walkableHeight * 4 的区域
+	// �ϲ����ص��������߶�С�� walkableHeight * 4 ������
 	const unsigned short mergeHeight = (unsigned short)walkableHeight * 4;
 	
 	for (int i = 0; i < nregs; ++i)
 	{
 		rcLayerRegion& ri = regs[i];
-		// 如果层级的不是根区域，跳过（根区域在上面把 base 设为了 1，根区域有所有合并后的信息）
+		// ����㼶�Ĳ��Ǹ������������������������ base ��Ϊ�� 1�������������кϲ������Ϣ��
 		if (!ri.base) continue;
 		
-		// 合并后的层级 ID
+		// �ϲ���Ĳ㼶 ID
 		unsigned char newId = ri.layerId;
 		
-		// 不断遍历其它区域，直到没找到可合并层级为止
+		// ���ϱ�����������ֱ��û�ҵ��ɺϲ��㼶Ϊֹ
 		for (;;)
 		{
 			unsigned char oldId = 0xff;
@@ -486,13 +486,13 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 				if (!rj.base) continue;
 				
 				// Skip if the regions are not close to each other.
-				// 如果两个层级的高度在范围内没有重叠，跳过
+				// ��������㼶�ĸ߶��ڷ�Χ��û���ص�������
 				if (!overlapRange(ri.ymin,ri.ymax+mergeHeight, rj.ymin,rj.ymax+mergeHeight))
 					continue;
 				// Skip if the height range would become too large.
 				const int ymin = rcMin(ri.ymin, rj.ymin);
 				const int ymax = rcMax(ri.ymax, rj.ymax);
-				// 如果合并后层级的最小最大高度大于等于255，跳过
+				// ����ϲ���㼶����С���߶ȴ��ڵ���255������
 				if ((ymax - ymin) >= 255)
 				  continue;
 						  
@@ -512,7 +512,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 					}
 				}
 				// Cannot merge of regions overlap.
-				// 如果 ri 和 rj 有重叠，跳过
+				// ��� ri �� rj ���ص�������
 				if (overlap)
 					continue;
 				
@@ -522,26 +522,26 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 			}
 			
 			// Could not find anything to merge with, stop.
-			// 没找到可以合并的层级，跳出死循环
+			// û�ҵ����Ժϲ��Ĳ㼶��������ѭ��
 			if (oldId == 0xff)
 				break;
 			
 			// Merge
-			// 合并层级
+			// �ϲ��㼶
 			for (int j = 0; j < nregs; ++j)
 			{
 				rcLayerRegion& rj = regs[j];
 
-				// 合并这个层级的所有区域
+				// �ϲ�����㼶����������
 				if (rj.layerId == oldId)
 				{
-					// 清除根区域标记
+					// �����������
 					rj.base = 0;
 					// Remap layerIds.
-					// 设置新的层级 ID
+					// �����µĲ㼶 ID
 					rj.layerId = newId;
 					// Add overlaid layers from 'rj' to 'ri'.
-					// 把这个区域已重叠区域的 ID 添加到根区域
+					// ������������ص������ ID ��ӵ�������
 					for (int k = 0; k < rj.nlayers; ++k)
 					{
 						if (!addUnique(ri.layers, ri.nlayers, RC_MAX_LAYERS, rj.layers[k]))
@@ -552,7 +552,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 					}
 
 					// Update height bounds.
-					// 更新合并后层级的最小最大高度
+					// ���ºϲ���㼶����С���߶�
 					ri.ymin = rcMin(ri.ymin, rj.ymin);
 					ri.ymax = rcMax(ri.ymax, rj.ymax);
 				}
@@ -561,25 +561,25 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	}
 	
 	// Compact layerIds
-	// 因为合并过层级，所以现在层级的 ID 不是连续的，压缩层级 ID
+	// ��Ϊ�ϲ����㼶���������ڲ㼶�� ID ���������ģ�ѹ���㼶 ID
 	unsigned char remap[256];
 	memset(remap, 0, 256);
 
 	// Find number of unique layers.
 	layerId = 0;
-	// 用 map 为 1 标记这个层级 ID 是已级使用的
+	// �� map Ϊ 1 �������㼶 ID ���Ѽ�ʹ�õ�
 	for (int i = 0; i < nregs; ++i)
 		remap[regs[i].layerId] = 1;
 	for (int i = 0; i < 256; ++i)
 	{
-		// 对于所有已用的层级 ID，赋予紧凑 ID
+		// �����������õĲ㼶 ID�������� ID
 		if (remap[i])
 			remap[i] = layerId++;
 		else
 			remap[i] = 0xff;
 	}
 	// Remap ids.
-	// 更新紧凑 ID
+	// ���½�� ID
 	for (int i = 0; i < nregs; ++i)
 		regs[i].layerId = remap[regs[i].layerId];
 	
@@ -590,12 +590,12 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	// Create layers.
 	rcAssert(lset.layers == 0);
 	
-	// 剔除 border
+	// �޳� border
 	const int lw = w - borderSize*2;
 	const int lh = h - borderSize*2;
 
 	// Build contracted bbox for layers.
-	// 包围盒去掉 border
+	// ��Χ��ȥ�� border
 	float bmin[3], bmax[3];
 	rcVcopy(bmin, chf.bmin);
 	rcVcopy(bmax, chf.bmax);
@@ -606,7 +606,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	
 	lset.nlayers = (int)layerId;
 	
-	// 创建层级数据区
+	// �����㼶������
 	lset.layers = (rcHeightfieldLayer*)rcAlloc(sizeof(rcHeightfieldLayer)*lset.nlayers, RC_ALLOC_PERM);
 	if (!lset.layers)
 	{
@@ -619,26 +619,26 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 	// Store layers.
 	for (int i = 0; i < lset.nlayers; ++i)
 	{
-		// 当前层级 ID
+		// ��ǰ�㼶 ID
 		unsigned char curId = (unsigned char)i;
 
-		// 当前层级数据
+		// ��ǰ�㼶����
 		rcHeightfieldLayer* layer = &lset.layers[i];
 
-		// 剔除 border 后的格子数
+		// �޳� border ��ĸ�����
 		const int gridSize = sizeof(unsigned char)*lw*lh;
 
-		// 当前层级所在格子的高度数据区
+		// ��ǰ�㼶���ڸ��ӵĸ߶�������
 		layer->heights = (unsigned char*)rcAlloc(gridSize, RC_ALLOC_PERM);
 		if (!layer->heights)
 		{
 			ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'heights' (%d).", gridSize);
 			return false;
 		}
-		// 初始化为最大值
+		// ��ʼ��Ϊ���ֵ
 		memset(layer->heights, 0xff, gridSize);
 
-		// 当前层级所在格子的场地 ID 数据区
+		// ��ǰ�㼶���ڸ��ӵĳ��� ID ������
 		layer->areas = (unsigned char*)rcAlloc(gridSize, RC_ALLOC_PERM);
 		if (!layer->areas)
 		{
@@ -647,7 +647,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 		}
 		memset(layer->areas, 0, gridSize);
 
-		// 当前层级所在格子的连接数据区
+		// ��ǰ�㼶���ڸ��ӵ�����������
 		layer->cons = (unsigned char*)rcAlloc(gridSize, RC_ALLOC_PERM);
 		if (!layer->cons)
 		{
@@ -656,7 +656,7 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 		}
 		memset(layer->cons, 0, gridSize);
 		
-		// 获取层级的高度范围
+		// ��ȡ�㼶�ĸ߶ȷ�Χ
 		// Find layer height bounds.
 		int hmin = 0, hmax = 0;
 		for (int j = 0; j < nregs; ++j)
@@ -668,13 +668,13 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 			}
 		}
 
-		// 层级宽度
+		// �㼶���
 		layer->width = lw;
-		// 层级长度
+		// �㼶����
 		layer->height = lh;
-		// 格子边长
+		// ���ӱ߳�
 		layer->cs = chf.cs;
-		// 格子高度
+		// ���Ӹ߶�
 		layer->ch = chf.ch;
 		
 		// Adjust the bbox to fit the heightfield.
@@ -701,21 +701,21 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 				const rcCompactCell& c = chf.cells[cx+cy*w];
 				for (int j = (int)c.index, nj = (int)(c.index+c.count); j < nj; ++j)
 				{
-					// 当前 span
+					// ��ǰ span
 					const rcCompactSpan& s = chf.spans[j];
 					// Skip unassigned regions.
-					// 如果当前 span 区域 ID 无效，跳过
+					// �����ǰ span ���� ID ��Ч������
 					if (srcReg[j] == 0xff)
 						continue;
 					// Skip of does nto belong to current layer.
-					// 当前 span 层级 ID
+					// ��ǰ span �㼶 ID
 					unsigned char lid = regs[srcReg[j]].layerId;
-					// 非当前层级的 span ，跳过
+					// �ǵ�ǰ�㼶�� span ������
 					if (lid != curId)
 						continue;
 					
 					// Update data bounds.
-					// 把当前 span 添加到层级包围盒
+					// �ѵ�ǰ span ��ӵ��㼶��Χ��
 					layer->minx = rcMin(layer->minx, x);
 					layer->maxx = rcMax(layer->maxx, x);
 					layer->miny = rcMin(layer->miny, y);
@@ -723,35 +723,35 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 					
 					// Store height and area type.
 					const int idx = x+y*lw;
-					// 设置当前层级所在格子的高度
+					// ���õ�ǰ�㼶���ڸ��ӵĸ߶�
 					layer->heights[idx] = (unsigned char)(s.y - hmin);
-					// 设置当前层级所在格子的场地 ID
+					// ���õ�ǰ�㼶���ڸ��ӵĳ��� ID
 					layer->areas[idx] = chf.areas[j];
 					
 					// Check connection.
-					// 更新当前层级所在格子的连接
-					// 外部连接，连接其它 layer
+					// ���µ�ǰ�㼶���ڸ��ӵ�����
+					// �ⲿ���ӣ��������� layer
 					unsigned char portal = 0;
-					// 内部连接，连接其它格子
+					// �ڲ����ӣ�������������
 					unsigned char con = 0;
 					for (int dir = 0; dir < 4; ++dir)
 					{
-						// 如果当前方向上 span 有连接
+						// �����ǰ������ span ������
 						if (rcGetCon(s, dir) != RC_NOT_CONNECTED)
 						{
 							const int ax = cx + rcGetDirOffsetX(dir);
 							const int ay = cy + rcGetDirOffsetY(dir);
 							const int ai = (int)chf.cells[ax+ay*w].index + rcGetCon(s, dir);
-							// 当前方向上连接的 layer 
+							// ��ǰ���������ӵ� layer 
 							unsigned char alid = srcReg[ai] != 0xff ? regs[srcReg[ai]].layerId : 0xff;
 							// Portal mask
 							if (chf.areas[ai] != RC_NULL_AREA && lid != alid)
 							{
-								// 如果不是同一个 layer
+								// �������ͬһ�� layer
 								portal |= (unsigned char)(1<<dir);
 								// Update height so that it matches on both sides of the portal.
 								const rcCompactSpan& as = chf.spans[ai];
-								// 如果 span 的地面高度大于 layer 最小高度
+								// ��� span �ĵ���߶ȴ��� layer ��С�߶�
 								if (as.y > hmin)
 									layer->heights[idx] = rcMax(layer->heights[idx], (unsigned char)(as.y - hmin));
 							}
@@ -760,14 +760,14 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 							{
 								const int nx = ax - borderSize;
 								const int ny = ay - borderSize;
-								// 如果是同一个 layer
+								// �����ͬһ�� layer
 								if (nx >= 0 && ny >= 0 && nx < lw && ny < lh)
 									con |= (unsigned char)(1<<dir);
 							}
 						}
 					}
 				
-					// 高4位保存外部连接方向，低4位保存内部连接方向
+					// ��4λ�����ⲿ���ӷ��򣬵�4λ�����ڲ����ӷ���
 					layer->cons[idx] = (portal << 4) | con;
 				}
 			}

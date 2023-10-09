@@ -296,6 +296,7 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 	int storedOffMeshConCount = 0;
 	int offMeshConLinkCount = 0;
 	
+	// ����е�������������
 	if (params->offMeshConCount > 0)
 	{
 		offMeshConClass = (unsigned char*)dtAlloc(sizeof(unsigned char)*params->offMeshConCount*2, DT_ALLOC_TEMP);
@@ -308,6 +309,7 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 		
 		if (params->detailVerts && params->detailVertsCount)
 		{
+			// �����ϸ��������ϸ����������Χ��
 			for (int i = 0; i < params->detailVertsCount; ++i)
 			{
 				const float h = params->detailVerts[i*3+1];
@@ -317,6 +319,7 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 		}
 		else
 		{
+			// �ö�������Χ��
 			for (int i = 0; i < params->vertCount; ++i)
 			{
 				const unsigned short* iv = &params->verts[i*3];
@@ -524,10 +527,12 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 		{
 			if (src[j] == MESH_NULL_IDX) break;
 			p->verts[j] = src[j];
+			// 0x8000 �Ǳ߽�
 			if (src[nvp+j] & 0x8000)
 			{
 				// Border or portal edge.
 				unsigned short dir = src[nvp+j] & 0xf;
+				// dir == 0x0f �Ǳ߽磬�������ⲿ���� DT_EXT_LINK
 				if (dir == 0xf) // Border
 					p->neis[j] = 0;
 				else if (dir == 0) // Portal x-
@@ -542,7 +547,7 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 			else
 			{
 				// Normal connection
-                // 因为 0 表示边界，没有相邻多边形，所以这里对多边形索引加 1，后面要用的时候如果 neis 非 0，就减 1 获得多边形索引
+                // ��Ϊ 0 ��ʾ�߽磬û�����ڶ���Σ���������Զ���������� 1������Ҫ�õ�ʱ����� neis �� 0���ͼ� 1 ��ö��������
 				p->neis[j] = src[nvp+j]+1;
 			}
 			

@@ -305,20 +305,20 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	const rcChunkyTriMesh* chunkyMesh = m_geom->getChunkyMesh();
 	
 	// Tile bounds.
-	// tile 大小
+	// tile ��С
 	const float tcs = cfg.tileSize * cfg.cs;
 	
 	rcConfig tcfg;
 	memcpy(&tcfg, &cfg, sizeof(tcfg));
 
-	// 计算 tile 包围盒
+	// ���� tile ��Χ��
 	tcfg.bmin[0] = cfg.bmin[0] + tx*tcs;
 	tcfg.bmin[1] = cfg.bmin[1];
 	tcfg.bmin[2] = cfg.bmin[2] + ty*tcs;
 	tcfg.bmax[0] = cfg.bmin[0] + (tx+1)*tcs;
 	tcfg.bmax[1] = cfg.bmax[1];
 	tcfg.bmax[2] = cfg.bmin[2] + (ty+1)*tcs;
-	// 根据 bordersize 扩张 tile
+	// ���� bordersize ���� tile
 	tcfg.bmin[0] -= tcfg.borderSize*tcfg.cs;
 	tcfg.bmin[2] -= tcfg.borderSize*tcfg.cs;
 	tcfg.bmax[0] += tcfg.borderSize*tcfg.cs;
@@ -331,7 +331,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'solid'.");
 		return 0;
 	}
-	// 创建高度场
+	// �����߶ȳ�
 	if (!rcCreateHeightfield(m_ctx, *rc.solid, tcfg.width, tcfg.height, tcfg.bmin, tcfg.bmax, tcfg.cs, tcfg.ch))
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Could not create solid heightfield.");
@@ -353,7 +353,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	tbmin[1] = tcfg.bmin[2];
 	tbmax[0] = tcfg.bmax[0];
 	tbmax[1] = tcfg.bmax[2];
-	// 获取 mesh 中与 tile bound 相交的 chunk
+	// ��ȡ mesh ���� tile bound �ཻ�� chunk
 	int cid[512];// TODO: Make grow when returning too many items.
 	const int ncid = rcGetChunksOverlappingRect(chunkyMesh, tbmin, tbmax, cid, 512);
 	if (!ncid)
@@ -361,19 +361,19 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		return 0; // empty
 	}
 	
-	// 遍历所有 chunk
+	// �������� chunk
 	for (int i = 0; i < ncid; ++i)
 	{
 		const rcChunkyTriMeshNode& node = chunkyMesh->nodes[cid[i]];
 		const int* tris = &chunkyMesh->tris[node.i*3];
 		const int ntris = node.n;
 		
-		// 在rc.triareas 中标记可行走三角面 
+		// ��rc.triareas �б�ǿ����������� 
 		memset(rc.triareas, 0, ntris*sizeof(unsigned char));
 		rcMarkWalkableTriangles(m_ctx, tcfg.walkableSlopeAngle,
 								verts, nverts, tris, ntris, rc.triareas);
 		
-		// 栅格化三角面，生成 span
+		// դ�������棬���� span
 		if (!rcRasterizeTriangles(m_ctx, verts, nverts, tris, rc.triareas, ntris, *rc.solid, tcfg.walkableClimb))
 			return 0;
 	}
@@ -381,13 +381,13 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	// Once all geometry is rasterized, we do initial pass of filtering to
 	// remove unwanted overhangs caused by the conservative rasterization
 	// as well as filter spans where the character cannot possibly stand.
-	// 同一个格子上下两个 span 上面表高度差小于 tcfg.walkableClimb 的时候，如果 下 span 可走，则标记上 span 的 AreaId 为下 span 的 AreaId
+	// ͬһ�������������� span �����߶Ȳ�С�� tcfg.walkableClimb ��ʱ����� �� span ���ߣ������� span �� AreaId Ϊ�� span �� AreaId
 	if (m_filterLowHangingObstacles)
 		rcFilterLowHangingWalkableObstacles(m_ctx, tcfg.walkableClimb, *rc.solid);
-	// 过滤突起
+	// ����ͻ��
 	if (m_filterLedgeSpans)
 		rcFilterLedgeSpans(m_ctx, tcfg.walkableHeight, tcfg.walkableClimb, *rc.solid);
-	// 如果同一格子上下两个 span 的间隙小于 tcfg.walkableHeight，则把下 span 标记为不可走
+	// ���ͬһ������������ span �ļ�϶С�� tcfg.walkableHeight������� span ���Ϊ������
 	if (m_filterWalkableLowHeightSpans)
 		rcFilterWalkableLowHeightSpans(m_ctx, tcfg.walkableHeight, *rc.solid);
 	
@@ -397,7 +397,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'chf'.");
 		return 0;
 	}
-	// 合并数据，让高度域的数据变得紧凑，并且连接相邻两个互通的 span
+	// �ϲ����ݣ��ø߶�������ݱ�ý�գ�������������������ͨ�� span
 	if (!rcBuildCompactHeightfield(m_ctx, tcfg.walkableHeight, tcfg.walkableClimb, *rc.solid, *rc.chf))
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build compact data.");
@@ -405,7 +405,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	}
 	
 	// Erode the walkable area by agent radius.
-	// 在边缘剔除移动物体半径
+	// �ڱ�Ե�޳��ƶ�����뾶
 	if (!rcErodeWalkableArea(m_ctx, tcfg.walkableRadius, *rc.chf))
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Could not erode.");
@@ -413,7 +413,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	}
 	
 	// (Optional) Mark areas.
-	// 标记盒子包围 span 的场地 ID
+	// ��Ǻ��Ӱ�Χ span �ĳ��� ID
 	const ConvexVolume* vols = m_geom->getConvexVolumes();
 	for (int i  = 0; i < m_geom->getConvexVolumeCount(); ++i)
 	{
@@ -422,25 +422,25 @@ int Sample_TempObstacles::rasterizeTileLayers(
 							 (unsigned char)vols[i].area, *rc.chf);
 	}
 	
-	// 创建高度域层集数据区
+	// �����߶���㼯������
 	rc.lset = rcAllocHeightfieldLayerSet();
 	if (!rc.lset)
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Out of memory 'lset'.");
 		return 0;
 	}
-	// 构建高度域层集 -> rc.lset
-	// 逐行扫描方式划分区域，重叠的区域划分成不同的 layer
-	// 合并不重叠并且高度差不超过 tcfg.walkableHeight 的区域到同一个 layer
-	// 最后把不相连并且高度差不超过 tcfg.walkableHeight 的 layer 也合并成同一个 layer
+	// �����߶���㼯 -> rc.lset
+	// ����ɨ�跽ʽ���������ص������򻮷ֳɲ�ͬ�� layer
+	// �ϲ����ص����Ҹ߶Ȳ���� tcfg.walkableHeight ������ͬһ�� layer
+	// ���Ѳ��������Ҹ߶Ȳ���� tcfg.walkableHeight �� layer Ҳ�ϲ���ͬһ�� layer
 	if (!rcBuildHeightfieldLayers(m_ctx, *rc.chf, tcfg.borderSize, tcfg.walkableHeight, *rc.lset))
 	{
 		m_ctx->log(RC_LOG_ERROR, "buildNavigation: Could not build heighfield layers.");
 		return 0;
 	}
 	
-	// 现在每一个 layer 里的可行走面都是不重叠的
-	// 打包压缩 layer 数据，动态构建导航的时候可以重复利用这些 layer ，
+	// ����ÿһ�� layer ��Ŀ������涼�ǲ��ص���
+	// ���ѹ�� layer ���ݣ���̬����������ʱ������ظ�������Щ layer ��
 	rc.ntiles = 0;
 	for (int i = 0; i < rcMin(rc.lset->nlayers, MAX_LAYERS); ++i)
 	{
@@ -448,19 +448,19 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		const rcHeightfieldLayer* layer = &rc.lset->layers[i];
 		
 		// Store header
-		// 生成 layer 的头信息
+		// ���� layer ��ͷ��Ϣ
 		dtTileCacheLayerHeader header;
-		// 版本信息
+		// �汾��Ϣ
 		header.magic = DT_TILECACHE_MAGIC;
 		header.version = DT_TILECACHE_VERSION;
 		
 		// Tile layer location in the navmesh.
-		// tile 的格子坐标
+		// tile �ĸ�������
 		header.tx = tx;
 		header.ty = ty;
 		// layer id
 		header.tlayer = i;
-		// layer 包围盒
+		// layer ��Χ��
 		dtVcopy(header.bmin, layer->bmin);
 		dtVcopy(header.bmax, layer->bmax);
 		
@@ -474,8 +474,8 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		header.hmin = (unsigned short)layer->hmin;
 		header.hmax = (unsigned short)layer->hmax;
 
-		// 构建压缩 layer 
-		// 压缩后的数围保存在 tile->data / tile->dataSize
+		// ����ѹ�� layer 
+		// ѹ�������Χ������ tile->data / tile->dataSize
 		dtStatus status = dtBuildTileCacheLayer(&comp, &header, layer->heights, layer->areas, layer->cons,
 												&tile->data, &tile->dataSize);
 		if (dtStatusFailed(status))
@@ -485,7 +485,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 	}
 
 	// Transfer ownsership of tile data from build context to the caller.
-	// 转移数据所有权，把 context 里的数据移到 tiles 里，构建完毕
+	// ת����������Ȩ���� context ��������Ƶ� tiles ��������
 	int n = 0;
 	for (int i = 0; i < rcMin(rc.ntiles, maxTiles); ++i)
 	{
@@ -600,7 +600,7 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 		}
 		
 		bc.lcset = dtAllocTileCacheContourSet(talloc);
-        bc.tcset = dtAllocTileCacheBorderSet(talloc);
+        	bc.tcset = dtAllocTileCacheBorderSet(talloc);
 		if (!bc.lcset || !bc.tcset)
 			return;
 		status = dtBuildTileCacheContours(talloc, *bc.layer, walkableClimbVx,
@@ -1247,46 +1247,46 @@ bool Sample_TempObstacles::handleBuild()
 	m_tmproc->init(m_geom);
 	
 	// Init cache
-	// 总包围盒大小
+	// �ܰ�Χ�д�С
 	const float* bmin = m_geom->getNavMeshBoundsMin();
 	const float* bmax = m_geom->getNavMeshBoundsMax();
 	int gw = 0, gh = 0;
-	// 计算总格子，gw、gh是格子长宽数
+	// �����ܸ��ӣ�gw��gh�Ǹ��ӳ�����
 	rcCalcGridSize(bmin, bmax, m_cellSize, &gw, &gh);
-	// 每个 tile 边长的格子数量
+	// ÿ�� tile �߳��ĸ�������
 	const int ts = (int)m_tileSize;
-	// tile 长宽（单位是格子数）
+	// tile �������λ�Ǹ�������
 	const int tw = (gw + ts-1) / ts;
 	const int th = (gh + ts-1) / ts;
 
 	// Generation params.
 	rcConfig cfg;
 	memset(&cfg, 0, sizeof(cfg));
-	// 格子边长
+	// ���ӱ߳�
 	cfg.cs = m_cellSize;
-	// 格子高度
+	// ���Ӹ߶�
 	cfg.ch = m_cellHeight;
-	// 可行走倾斜角度
+	// ��������б�Ƕ�
 	cfg.walkableSlopeAngle = m_agentMaxSlope;
-	// agent 高度
+	// agent �߶�
 	cfg.walkableHeight = (int)ceilf(m_agentHeight / cfg.ch);
-	// agent 可以踏上去的高度差
+	// agent ����̤��ȥ�ĸ߶Ȳ�
 	cfg.walkableClimb = (int)floorf(m_agentMaxClimb / cfg.ch);
-	// agent 半径
+	// agent �뾶
 	cfg.walkableRadius = (int)ceilf(m_agentRadius / cfg.cs);
-	// 分割多边形时最长边长
+	// �ָ�����ʱ��߳�
 	cfg.maxEdgeLen = (int)(m_edgeMaxLen / m_cellSize);
-	// 抗锯齿简化的的偏移量
+	// ����ݼ򻯵ĵ�ƫ����
 	cfg.maxSimplificationError = m_edgeMaxError;
 	cfg.minRegionArea = (int)rcSqr(m_regionMinSize);		// Note: area = size*size
 	cfg.mergeRegionArea = (int)rcSqr(m_regionMergeSize);	// Note: area = size*size
-	// 多边形高大顶点数
+	// ����θߴ󶥵���
 	cfg.maxVertsPerPoly = (int)m_vertsPerPoly;
-	// tile 的边长（格子数）
+	// tile �ı߳�����������
 	cfg.tileSize = (int)m_tileSize;
-	// 边界宽度格子数，agnet 半径再加 3？
+	// �߽��ȸ�������agnet �뾶�ټ� 3��
 	cfg.borderSize = cfg.walkableRadius + 3; // Reserve enough padding.
-	// 扩展长宽
+	// ��չ����
 	cfg.width = cfg.tileSize + cfg.borderSize*2;
 	cfg.height = cfg.tileSize + cfg.borderSize*2;
 	cfg.detailSampleDist = m_detailSampleDist < 0.9f ? 0 : m_cellSize * m_detailSampleDist;
@@ -1295,7 +1295,7 @@ bool Sample_TempObstacles::handleBuild()
 	rcVcopy(cfg.bmax, bmax);
 	
 	// Tile cache params.
-	// tile 缓存参数
+	// tile �������
 	dtTileCacheParams tcparams;
 	memset(&tcparams, 0, sizeof(tcparams));
 	rcVcopy(tcparams.orig, bmin);
@@ -1312,7 +1312,7 @@ bool Sample_TempObstacles::handleBuild()
 
 	dtFreeTileCache(m_tileCache);
 	
-	// 初始化 cache
+	// ��ʼ�� cache
 	m_tileCache = dtAllocTileCache();
 	if (!m_tileCache)
 	{
@@ -1362,11 +1362,11 @@ bool Sample_TempObstacles::handleBuild()
 	
 	m_ctx->resetTimers();
 	
-	// layer 总数量
+	// layer ������
 	m_cacheLayerCount = 0;
-	// 压缩后总大小
+	// ѹ�����ܴ�С
 	m_cacheCompressedSize = 0;
-	// 原始数据大小
+	// ԭʼ���ݴ�С
 	m_cacheRawSize = 0;
 	
 	for (int y = 0; y < th; ++y)
@@ -1375,15 +1375,15 @@ bool Sample_TempObstacles::handleBuild()
 		{
 			TileCacheData tiles[MAX_LAYERS];
 			memset(tiles, 0, sizeof(tiles));
-			// 栅格化当前 tile 的 layer
+			// դ�񻯵�ǰ tile �� layer
 			int ntiles = rasterizeTileLayers(x, y, cfg, tiles, MAX_LAYERS);
 
-			// 这个 tile 里面的每一个 layer 都保存到一个 m_tileCache 内
-			// 所以对于 dtTileCache 里的每一个 tile 其实都是一个 layer
+			// ��� tile �����ÿһ�� layer �����浽һ�� m_tileCache ��
+			// ���Զ��� dtTileCache ���ÿһ�� tile ��ʵ����һ�� layer
 			for (int i = 0; i < ntiles; ++i)
 			{
 				TileCacheData* tile = &tiles[i];
-				// 把压缩的数据添加进去
+				// ��ѹ����������ӽ�ȥ
 				status = m_tileCache->addTile(tile->data, tile->dataSize, DT_COMPRESSEDTILE_FREE_DATA, 0);
 				if (dtStatusFailed(status))
 				{
@@ -1398,13 +1398,13 @@ bool Sample_TempObstacles::handleBuild()
 			}
 		}
 	}
-	// 以上是生成可复用的 layer 栅格化后的数据，以后可以复用
-	// 因为栅格化 layer 是最耗时的，所以需要先离线生成，动态构建的多边形的时候可以省很多时间
-	// dtTileCache 是紧凑连续的内存，减少 cache miss ，每个 tile 通过哈希链表来保存，加快查找速度
-	// 注意：每个 layer 的长宽已经剔除掉 borderSize 了
+	// ���������ɿɸ��õ� layer դ�񻯺�����ݣ��Ժ���Ը���
+	// ��Ϊդ�� layer �����ʱ�ģ�������Ҫ���������ɣ���̬�����Ķ���ε�ʱ�����ʡ�ܶ�ʱ��
+	// dtTileCache �ǽ���������ڴ棬���� cache miss ��ÿ�� tile ͨ����ϣ���������棬�ӿ�����ٶ�
+	// ע�⣺ÿ�� layer �ĳ����Ѿ��޳��� borderSize ��
 
 	// Build initial meshes
-	// 逐个 tile 构建 layer 上的多边形，保存到 m_navMesh
+	// ��� tile ���� layer �ϵĶ���Σ����浽 m_navMesh
 	m_ctx->startTimer(RC_TIMER_TOTAL);
 	for (int y = 0; y < th; ++y)
 		for (int x = 0; x < tw; ++x)

@@ -178,7 +178,7 @@ int dtTileCache::getTilesAt(const int tx, const int ty, dtCompressedTileRef* til
 	int n = 0;
 	
 	// Find tile based on hash.
-	// 在 tx/ty 坐标上有很多个 layer ，dtCompressedTile 其实保存的是 Layer 数据
+	// �� tx/ty �������кܶ�� layer ��dtCompressedTile ��ʵ������� Layer ����
 	int h = computeTileHash(tx,ty,m_tileLutMask);
 	dtCompressedTile* tile = m_posLookup[h];
 	while (tile)
@@ -251,7 +251,7 @@ dtTileCacheMeshProcess::~dtTileCacheMeshProcess()
 dtStatus dtTileCache::addTile(unsigned char* data, const int dataSize, unsigned char flags, dtCompressedTileRef* result)
 {
 	// Make sure the data is in right format.
-	// 校验数据头版本信息
+	// У������ͷ�汾��Ϣ
 	dtTileCacheLayerHeader* header = (dtTileCacheLayerHeader*)data;
 	if (header->magic != DT_TILECACHE_MAGIC)
 		return DT_FAILURE | DT_WRONG_MAGIC;
@@ -259,12 +259,12 @@ dtStatus dtTileCache::addTile(unsigned char* data, const int dataSize, unsigned 
 		return DT_FAILURE | DT_WRONG_VERSION;
 	
 	// Make sure the location is free.
-	// 如果这个坐标已经有 tile 数据了，跳过
+	// �����������Ѿ��� tile �����ˣ�����
 	if (getTileAt(header->tx, header->ty, header->tlayer))
 		return DT_FAILURE;
 	
 	// Allocate a tile.
-	// 在 FreeList 里获取空闲的内存
+	// �� FreeList ���ȡ���е��ڴ�
 	dtCompressedTile* tile = 0;
 	if (m_nextFreeTile)
 	{
@@ -278,15 +278,15 @@ dtStatus dtTileCache::addTile(unsigned char* data, const int dataSize, unsigned 
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	
 	// Insert tile into the position lut.
-	// lut，look up table，查找表
-	// 一个哈希查找表，每个哈希对应一个链表
+	// lut��look up table�����ұ�
+	// һ����ϣ���ұ��ÿ����ϣ��Ӧһ������
 	int h = computeTileHash(header->tx, header->ty, m_tileLutMask);
-	// 把新 tile 插到链表的头
+	// ���� tile �嵽�����ͷ
 	tile->next = m_posLookup[h];
 	m_posLookup[h] = tile;
 	
 	// Init tile.
-	// 保存 tile 数据
+	// ���� tile ����
 	const int headerSize = dtAlign4(sizeof(dtTileCacheLayerHeader));
 	tile->header = (dtTileCacheLayerHeader*)data;
 	tile->data = data;
@@ -651,7 +651,7 @@ dtStatus dtTileCache::update(const float /*dt*/, dtNavMesh* navmesh,
 
 dtStatus dtTileCache::buildNavMeshTilesAt(const int tx, const int ty, dtNavMesh* navmesh)
 {
-	// 找出这个 tx/ty 坐标上的所有 layer
+	// �ҳ���� tx/ty �����ϵ����� layer
 	const int MAX_TILES = 32;
 	dtCompressedTileRef tiles[MAX_TILES];
 	const int ntiles = getTilesAt(tx,ty,tiles,MAX_TILES);
@@ -686,13 +686,13 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	dtStatus status;
 	
 	// Decompress tile layer data. 
-	// 解压 layer 数据
+	// ��ѹ layer ����
 	status = dtDecompressTileCacheLayer(m_talloc, m_tcomp, tile->data, tile->dataSize, &bc.layer);
 	if (dtStatusFailed(status))
 		return status;
 	
 	// Rasterize obstacles.
-	// 栅格化障碍物，对障碍物覆盖的格子写入 area id
+	// դ���ϰ�����ϰ��︲�ǵĸ���д�� area id
 	for (int i = 0; i < m_params.maxObstacles; ++i)
 	{
 		const dtTileCacheObstacle* ob = &m_obstacles[i];
@@ -719,12 +719,12 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	}
 	
 	// Build navmesh
-	// 先对 layer 进行区域划分
+	// �ȶ� layer �������򻮷�
 	status = dtBuildTileCacheRegions(m_talloc, *bc.layer, walkableClimbVx);
 	if (dtStatusFailed(status))
 		return status;
 	
-	// 对区域进行描边
+	// ������������
 	bc.lcset = dtAllocTileCacheContourSet(m_talloc);
 	bc.tcset = dtAllocTileCacheBorderSet(m_talloc);
 	if (!bc.lcset || !bc.tcset)
@@ -737,13 +737,13 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
 	if (!bc.lmesh)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
-	// 构造多边形
+	// ��������
 	status = dtBuildTileCachePolyMesh(m_talloc, *bc.lcset, *bc.lmesh);
 	if (dtStatusFailed(status))
 		return status;
 	
 	// Early out if the mesh tile is empty.
-	// 先清除之前生成的 tile
+	// �����֮ǰ���ɵ� tile
 	if (!bc.lmesh->npolys)
 	{
 		// Remove existing tile.
@@ -779,19 +779,19 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	
 	unsigned char* navData = 0;
 	int navDataSize = 0;
-    // 创建 dtMeshTile
+    // ���� dtMeshTile
 	if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
 		return DT_FAILURE;
 
 	// Remove existing tile.
-    // 把旧的 tile 移除掉
+    // �Ѿɵ� tile �Ƴ���
 	navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
 
 	// Add new tile, or leave the location empty.
 	if (navData)
 	{
 		// Let the navmesh own the data.
-        // 添加 tile data
+        // ��� tile data
 		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
 		if (dtStatusFailed(status))
 		{

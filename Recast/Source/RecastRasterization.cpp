@@ -113,39 +113,39 @@ static bool addSpan(rcHeightfield& heightfield,
 	{
 		return false;
 	}
-	newSpan->smin = min;		// 最小高度格子坐标
-	newSpan->smax = max;		// 最大高度格子坐标
-	newSpan->area = areaID;		// 场地 ID
-	newSpan->next = NULL;		// 同一xz坐标的所有 span 的链表
+	newSpan->smin = min;		// ��С�߶ȸ�������
+	newSpan->smax = max;		// ���߶ȸ�������
+	newSpan->area = areaID;		// ���� ID
+	newSpan->next = NULL;		// ͬһxz��������� span ������
 	
-	// 平面格子的一维索引
+	// ƽ����ӵ�һά����
 	const int columnIndex = x + z * heightfield.width;
-	// 上一个 span
+	// ��һ�� span
 	rcSpan* previousSpan = NULL;
-	// 链表头节点
+	// ����ͷ�ڵ�
 	rcSpan* currentSpan = heightfield.spans[columnIndex];
 	
 	// Insert the new span, possibly merging it with existing spans.
-	// 如果当前格子已存在 span，遍历所有已存在的 span
+	// �����ǰ�����Ѵ��� span�����������Ѵ��ڵ� span
 	while (currentSpan != NULL)
 	{
 		if (currentSpan->smin > newSpan->smax)
 		{
-			// 如果新的 span 完全在当前 span 下面，跳出循环
+			// ����µ� span ��ȫ�ڵ�ǰ span ���棬����ѭ��
 			// Current span is completely after the new span, break.
 			break;
 		}
 		
 		if (currentSpan->smax < newSpan->smin)
 		{
-			// 如果新的 span 完全在当前 span 上面，那么替换 previosSpan 成当前 span
+			// ����µ� span ��ȫ�ڵ�ǰ span ���棬��ô�滻 previosSpan �ɵ�ǰ span
 			// Current span is completely before the new span.  Keep going.
 			previousSpan = currentSpan;
 			currentSpan = currentSpan->next;
 		}
 		else
 		{
-			// 如果新的 span 和当前 span 重叠，合并两个 span
+			// ����µ� span �͵�ǰ span �ص����ϲ����� span
 			// The new span overlaps with an existing span.  Merge them.
 			if (currentSpan->smin < newSpan->smin)
 			{
@@ -157,28 +157,28 @@ static bool addSpan(rcHeightfield& heightfield,
 			}
 			
 			// Merge flags.
-			// 如果合并后的 span 和旧 span 的高度差小于等于 flagMergeThreshold，则取它们的最大场地ID
-			// 如果超过 flagMergeThreshold，则用原来的 ID（todo：用高的那个场地 ID 比较好？）
+			// ����ϲ���� span �;� span �ĸ߶Ȳ�С�ڵ��� flagMergeThreshold����ȡ���ǵ���󳡵�ID
+			// ������� flagMergeThreshold������ԭ���� ID��todo���øߵ��Ǹ����� ID �ȽϺã���
 			if (rcAbs((int)newSpan->smax - (int)currentSpan->smax) <= flagMergeThreshold)
 			{
 				// Higher area ID numbers indicate higher resolution priority.
-				// 场地 ID 越大，优先级越高
+				// ���� ID Խ�����ȼ�Խ��
 				newSpan->area = rcMax(newSpan->area, currentSpan->area);
 			}
 			
 			// Remove the current span since it's now merged with newSpan.
 			// Keep going because there might be other overlapping spans that also need to be merged.
-			// 合并后删除当前节点
+			// �ϲ���ɾ����ǰ�ڵ�
 			rcSpan* next = currentSpan->next;
 			freeSpan(heightfield, currentSpan);
 			if (previousSpan)
 			{
-				// previousSpan 不为空，非头节点，更新 next
+				// previousSpan ��Ϊ�գ���ͷ�ڵ㣬���� next
 				previousSpan->next = next;
 			}
 			else
 			{
-				// 更新头节点
+				// ����ͷ�ڵ�
 				heightfield.spans[columnIndex] = next;
 			}
 			currentSpan = next;
@@ -188,14 +188,14 @@ static bool addSpan(rcHeightfield& heightfield,
 	// Insert new span after prev
 	if (previousSpan != NULL)
 	{
-		// 如果存在 previousSpan，刚新的 span 不是头节点，插入合适位置
+		// ������� previousSpan�����µ� span ����ͷ�ڵ㣬�������λ��
 		newSpan->next = previousSpan->next;
 		previousSpan->next = newSpan;
 	}
 	else
 	{
 		// This span should go before the others in the list
-		// 新的 span 高度是最低的，是头节点，更新格子的头节点
+		// �µ� span �߶�����͵ģ���ͷ�ڵ㣬���¸��ӵ�ͷ�ڵ�
 		newSpan->next = heightfield.spans[columnIndex];
 		heightfield.spans[columnIndex] = newSpan;
 	}
@@ -245,7 +245,7 @@ static void dividePoly(const float* inVerts, int inVertsCount,
 	rcAssert(inVertsCount <= 12);
 	
 	// How far positive or negative away from the separating axis is each vertex.
-	// 计算每个顶点在 axis 轴方向和分割点的距离
+	// ����ÿ�������� axis �᷽��ͷָ��ľ���
 	float inVertAxisDelta[12];
 	for (int inVert = 0; inVert < inVertsCount; ++inVert)
 	{
@@ -254,17 +254,17 @@ static void dividePoly(const float* inVerts, int inVertsCount,
 
 	int poly1Vert = 0;
 	int poly2Vert = 0;
-	// 遍历每一条边
+	// ����ÿһ����
 	for (int inVertA = 0, inVertB = inVertsCount - 1; inVertA < inVertsCount; inVertB = inVertA, ++inVertA)
 	{
 		// If the two vertices are on the same side of the separating axis
-		// 这条边两个顶点是否在分割点的同一边
+		// ���������������Ƿ��ڷָ���ͬһ��
 		bool sameSide = (inVertAxisDelta[inVertA] >= 0) == (inVertAxisDelta[inVertB] >= 0);
 
-		// 如果不在同一边，分割这条边，添加新的顶点
+		// �������ͬһ�ߣ��ָ������ߣ�����µĶ���
 		if (!sameSide)
 		{
-			// 向 outVerts1 和 outVerts2 添加同一个新顶点
+			// �� outVerts1 �� outVerts2 ���ͬһ���¶���
 			float s = inVertAxisDelta[inVertB] / (inVertAxisDelta[inVertB] - inVertAxisDelta[inVertA]);
 			outVerts1[poly1Vert * 3 + 0] = inVerts[inVertB * 3 + 0] + (inVerts[inVertA * 3 + 0] - inVerts[inVertB * 3 + 0]) * s;
 			outVerts1[poly1Vert * 3 + 1] = inVerts[inVertB * 3 + 1] + (inVerts[inVertA * 3 + 1] - inVerts[inVertB * 3 + 1]) * s;
@@ -275,7 +275,7 @@ static void dividePoly(const float* inVerts, int inVertsCount,
 			
 			// add the inVertA point to the right polygon. Do NOT add points that are on the dividing line
 			// since these were already added above
-			// 把顶点 A 添加到 polyVerts1 或者polyVerts2
+			// �Ѷ��� A ��ӵ� polyVerts1 ����polyVerts2
 			if (inVertAxisDelta[inVertA] > 0)
 			{
 				rcVcopy(&outVerts1[poly1Vert * 3], &inVerts[inVertA * 3]);
@@ -287,21 +287,21 @@ static void dividePoly(const float* inVerts, int inVertsCount,
 				poly2Vert++;
 			}
 		}
-		else // 如果两个顶点都在分割点的同一边
+		else // ����������㶼�ڷָ���ͬһ��
 		{
 			// add the inVertA point to the right polygon. Addition is done even for points on the dividing line
 			if (inVertAxisDelta[inVertA] >= 0)
 			{
-				// 添加顶点 A 到 outVerts1
+				// ��Ӷ��� A �� outVerts1
 				rcVcopy(&outVerts1[poly1Vert * 3], &inVerts[inVertA * 3]);
 				poly1Vert++;
-				// 如果点 A 不是刚好在分割点上，跳过，不添加到 outVerts2
+				// ����� A ���Ǹպ��ڷָ���ϣ�����������ӵ� outVerts2
 				if (inVertAxisDelta[inVertA] != 0)
 				{
 					continue;
 				}
 			}
-			// 添加顶点 A 到 outVerts2
+			// ��Ӷ��� A �� outVerts2
 			rcVcopy(&outVerts2[poly2Vert * 3], &inVerts[inVertA * 3]);
 			poly2Vert++;
 		}
@@ -334,7 +334,7 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
                          const int flagMergeThreshold)
 {
 	// Calculate the bounding box of the triangle.
-	// 计算三角面的包围盒
+	// ����������İ�Χ��
 	float triBBMin[3];
 	rcVcopy(triBBMin, v0);
 	rcVmin(triBBMin, v1);
@@ -346,24 +346,24 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 	rcVmax(triBBMax, v2);
 
 	// If the triangle does not touch the bounding box of the heightfield, skip the triangle.
-	// 如果三角面包围盒没有和高度场包围盒重叠，跳过
+	// ����������Χ��û�к͸߶ȳ���Χ���ص�������
 	if (!overlapBounds(triBBMin, triBBMax, heightfieldBBMin, heightfieldBBMax))
 	{
 		return true;
 	}
 
-	// 高度场长，宽和高度
+	// �߶ȳ�������͸߶�
 	const int w = heightfield.width;
 	const int h = heightfield.height;
 	const float by = heightfieldBBMax[1] - heightfieldBBMin[1];
 
 	// Calculate the footprint of the triangle on the grid's z-axis
-	// 计算三角面 z 轴最小和最大的格子坐标
+	// ���������� z ����С�����ĸ�������
 	int z0 = (int)((triBBMin[2] - heightfieldBBMin[2]) * inverseCellSize);
 	int z1 = (int)((triBBMax[2] - heightfieldBBMin[2]) * inverseCellSize);
 
 	// use -1 rather than 0 to cut the polygon properly at the start of the tile
-	// 格子坐标范围是 -1 -> h-1，而不是 0 -> h，而且 z1 至少比 z0 大 1格
+	// �������귶Χ�� -1 -> h-1�������� 0 -> h������ z1 ���ٱ� z0 �� 1��
 	z0 = rcClamp(z0, -1, h - 1);
 	z1 = rcClamp(z1, 0, h - 1);
 
@@ -380,18 +380,18 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 	int nvRow;
 	int nvIn = 3;
 
-	// 遍历三角面覆盖的 z 轴
+	// ���������渲�ǵ� z ��
 	for (int z = z0; z <= z1; ++z)
 	{
 		// Clip polygon to row. Store the remaining polygon as well
-		// z 轴坐标
+		// z ������
 		const float cellZ = heightfieldBBMin[2] + (float)z * cellSize;
-		// 用 z 轴分割多边形，把多边形顶点 in 分割成两组顶点 inRow 和 p1
+		// �� z ��ָ����Σ��Ѷ���ζ��� in �ָ�����鶥�� inRow �� p1
 		dividePoly(in, nvIn, inRow, &nvRow, p1, &nvIn, cellZ + cellSize, RC_AXIS_Z);
-		// 与 in 交换，p1 是下一次分割的多边形
+		// �� in ������p1 ����һ�ηָ�Ķ����
 		rcSwap(in, p1);
 		
-		// 如果 inRow 的顶点数少于3，跳过（有可能多边形的某一条边刚好与 z 轴垂直并过分割点，那么这条边就刚好分在 inRow）
+		// ��� inRow �Ķ���������3���������п��ܶ���ε�ĳһ���߸պ��� z �ᴹֱ�����ָ�㣬��ô�����߾͸պ÷��� inRow��
 		if (nvRow < 3)
 		{
 			continue;
@@ -401,9 +401,9 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 			continue;
 		}
 		
-		// 在 x 轴分割 inRow
+		// �� x ��ָ� inRow
 		// find X-axis bounds of the row
-		// 计算 inRow 在 x 轴的界限
+		// ���� inRow �� x ��Ľ���
 		float minX = inRow[0];
 		float maxX = inRow[0];
 		for (int vert = 1; vert < nvRow; ++vert)
@@ -419,7 +419,7 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 		}
 		int x0 = (int)((minX - heightfieldBBMin[0]) * inverseCellSize);
 		int x1 = (int)((maxX - heightfieldBBMin[0]) * inverseCellSize);
-		// x 轴与高度场 x 轴无重叠，跳过
+		// x ����߶ȳ� x �����ص�������
 		if (x1 < 0 || x0 >= w)
 		{
 			continue;
@@ -430,17 +430,17 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 		int nv;
 		int nv2 = nvRow;
 
-		// 遍历 inRow 覆盖的 x 轴
+		// ���� inRow ���ǵ� x ��
 		for (int x = x0; x <= x1; ++x)
 		{
 			// Clip polygon to column. store the remaining polygon as well
 			const float cx = heightfieldBBMin[0] + (float)x * cellSize;
-			// 在 cx 处把 inRow 分割成 p1 和 p2
+			// �� cx ���� inRow �ָ�� p1 �� p2
 			dividePoly(inRow, nv2, p1, &nv, p2, &nv2, cx + cellSize, RC_AXIS_X);
-			// 下一次分割 P2
+			// ��һ�ηָ� P2
 			rcSwap(inRow, p2);
 			
-			// 同 z 轴
+			// ͬ z ��
 			if (nv < 3)
 			{
 				continue;
@@ -451,7 +451,7 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 			}
 			
 			// Calculate min and max of the span.
-			// 计算 span 的高度界限，最小高度 spanMin 和最大高度 spanMax
+			// ���� span �ĸ߶Ƚ��ޣ���С�߶� spanMin �����߶� spanMax
 			float spanMin = p1[1];
 			float spanMax = p1[1];
 			for (int vert = 1; vert < nv; ++vert)
@@ -459,12 +459,12 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 				spanMin = rcMin(spanMin, p1[vert * 3 + 1]);
 				spanMax = rcMax(spanMax, p1[vert * 3 + 1]);
 			}
-			// 相对高度场的高度
+			// ��Ը߶ȳ��ĸ߶�
 			spanMin -= heightfieldBBMin[1];
 			spanMax -= heightfieldBBMin[1];
 			
 			// Skip the span if it's completely outside the heightfield bounding box
-			// 如果 span 在高度场外，跳过
+			// ��� span �ڸ߶ȳ��⣬����
 			if (spanMax < 0.0f)
 			{
 				continue;
@@ -475,7 +475,7 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 			}
 			
 			// Clamp the span to the heightfield bounding box.
-			// 把 span 的最大最小高度限定在高度场内
+			// �� span �������С�߶��޶��ڸ߶ȳ���
 			if (spanMin < 0.0f)
 			{
 				spanMin = 0;
@@ -486,12 +486,12 @@ static bool rasterizeTri(const float* v0, const float* v1, const float* v2,
 			}
 
 			// Snap the span to the heightfield height grid.
-			// 把 span 高度界限转换成格子坐标
+			// �� span �߶Ƚ���ת���ɸ�������
 			unsigned short spanMinCellIndex = (unsigned short)rcClamp((int)floorf(spanMin * inverseCellHeight), 0, RC_SPAN_MAX_HEIGHT);
 			unsigned short spanMaxCellIndex = (unsigned short)rcClamp((int)ceilf(spanMax * inverseCellHeight), (int)spanMinCellIndex + 1, RC_SPAN_MAX_HEIGHT);
 
-			// 添加 span，如果与已有的 span 的高度有重合，合并它们
-			// 合并时如果高度差小于等于 flagMergeThreshold，则合并后的 span 的场地 ID 使用两个 span 场地 ID 较大的场地 ID
+			// ��� span����������е� span �ĸ߶����غϣ��ϲ�����
+			// �ϲ�ʱ����߶Ȳ�С�ڵ��� flagMergeThreshold����ϲ���� span �ĳ��� ID ʹ������ span ���� ID �ϴ�ĳ��� ID
 			if (!addSpan(heightfield, x, z, spanMinCellIndex, spanMaxCellIndex, areaID, flagMergeThreshold))
 			{
 				return false;
@@ -539,7 +539,7 @@ bool rcRasterizeTriangles(rcContext* context,
 		const float* v0 = &verts[tris[triIndex * 3 + 0] * 3];
 		const float* v1 = &verts[tris[triIndex * 3 + 1] * 3];
 		const float* v2 = &verts[tris[triIndex * 3 + 2] * 3];
-		// 栅格化三角面，生成 span
+		// դ�������棬���� span
 		if (!rasterizeTri(v0, v1, v2, triAreaIDs[triIndex], heightfield, heightfield.bmin, heightfield.bmax, heightfield.cs, inverseCellSize, inverseCellHeight, flagMergeThreshold))
 		{
 			context->log(RC_LOG_ERROR, "rcRasterizeTriangles: Out of memory.");
