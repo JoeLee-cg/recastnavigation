@@ -502,6 +502,51 @@ void drawTiles(duDebugDraw* dd, dtTileCache* tc)
 
 }
 
+static void logLine(BuildContext& ctx, rcTimerLabel label, const char* name)
+{
+	const int t = ctx.getAccumulatedTime(label);
+	if (t < 0) return;
+	ctx.log(RC_LOG_PROGRESS, "%s:\t%.2fms\t(%.1f%%)", name, t/1000.0f, t);
+}
+void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh)
+{
+	if(!mesh)
+		return;
+
+	dd->begin(DU_DRAW_LINES, 5.0f);
+	const unsigned int color(duRGBA(255, 0, 0, 255));
+	int ntiles(mesh->getMaxTiles());
+	for (int i(0); i < ntiles; ++i)
+	{
+		dtMeshExtra *extra(mesh->getExtraByIndex(i));
+		if (!extra)
+			continue;
+
+		for (int j(0); j < extra->header->borderCount; ++j)
+		{
+			int start(j == 0 ? 0 : extra->splits[j - 1]);
+			for (int k(start); k < extra->splits[j]; ++k)
+			{
+				float fx = extra->vertices[k * 3 + 0];
+				float fy = extra->vertices[k * 3 + 1];
+				float fz = extra->vertices[k * 3 + 2];
+
+				int nk(k == extra->splits[j] - 1 ? start : k + 1);
+				float nfx = extra->vertices[nk * 3 + 0];
+				float nfy = extra->vertices[nk * 3 + 1];
+				float nfz = extra->vertices[nk * 3 + 2];
+
+				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", nfx, nfy, nfz);
+				dd->vertex(fx, fy, fz, color);
+				dd->vertex(nfx, nfy, nfz, color);
+			}
+		}
+	}
+	dd->end();
+}
+
+
 enum DrawDetailType
 {
 	DRAWDETAIL_AREAS,
@@ -514,7 +559,7 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 {
 	struct TileCacheBuildContext
 	{
-		inline TileCacheBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), lmesh(0), alloc(a) {}
+		inline TileCacheBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), tcset(0), lmesh(0), alloc(a) {}
 		inline ~TileCacheBuildContext() { purge(); }
 		void purge()
 		{
@@ -522,11 +567,14 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 			layer = 0;
 			dtFreeTileCacheContourSet(alloc, lcset);
 			lcset = 0;
+            dtFreeTileCacheBorderSet(alloc, tcset);
+            tcset = 0;
 			dtFreeTileCachePolyMesh(alloc, lmesh);
 			lmesh = 0;
 		}
 		struct dtTileCacheLayer* layer;
 		struct dtTileCacheContourSet* lcset;
+        struct dtTileCacheBorderSet* tcset;
 		struct dtTileCachePolyMesh* lmesh;
 		struct dtTileCacheAlloc* alloc;
 	};
@@ -575,6 +623,14 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 										  params->maxSimplificationError, *bc.lcset);
 		if (dtStatusFailed(status))
 			return;
+
+		bc.tcset = dtAllocTileCacheBorderSet(talloc);
+		if (!bc.tcset)
+			return;
+		status = dtBuildTileCacheBorders(talloc, *bc.layer, walkableClimbVx, *bc.lcset, *bc.tcset);
+		if (dtStatusFailed(status))
+			return;
+
 		if (type == DRAWDETAIL_CONTOURS)
 		{
 			duDebugDrawTileCacheContours(dd, *bc.lcset, tile->header->bmin, params->cs, params->ch);
@@ -1108,6 +1164,8 @@ void Sample_TempObstacles::handleRender()
 	renderToolStates();
 	
 	glDepthMask(GL_TRUE);
+
+	drawBorders(m_ctx, &m_dd, m_navMesh);
 }
 
 void Sample_TempObstacles::renderCachedTile(const int tx, const int ty, const int type)

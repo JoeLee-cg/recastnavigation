@@ -83,6 +83,25 @@ void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* c
 	alloc->free(cset);
 }
 
+dtTileCacheBorderSet* dtAllocTileCacheBorderSet(dtTileCacheAlloc* alloc)
+{
+	dtAssert(alloc);
+
+	dtTileCacheBorderSet* cset = (dtTileCacheBorderSet*)alloc->alloc(sizeof(dtTileCacheBorderSet));
+	memset(cset, 0, sizeof(dtTileCacheBorderSet));
+	return cset;
+}
+
+void dtFreeTileCacheBorderSet(dtTileCacheAlloc* alloc, dtTileCacheBorderSet* cset)
+{
+	dtAssert(alloc);
+
+	if (!cset) return;
+	alloc->free(cset->splits);
+	alloc->free(cset->vertices);
+	alloc->free(cset);
+}
+
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc)
 {
 	dtAssert(alloc);
@@ -538,6 +557,93 @@ static bool walkContour(dtTileCacheLayer& layer, int x, int y, dtTempContour& co
 	return true;
 }	
 
+static bool walkBorder(dtTileCacheLayer& layer, const dtTileCacheContourSet& lcset, unsigned char* flag, int x, int y, dtTempContour& cont)
+{
+	const int w = (int)layer.header->width;
+	cont.nverts = 0;
+
+	int startX = x;
+	int startY = y;
+	int startDir = -1;
+
+	for (int i = 0; i < 4; ++i)
+	{
+		const int dir = (i + 3) & 3;
+		if (flag[x + y * w] & (0x01 << dir))
+			continue;
+
+		unsigned char rn = getNeighbourReg(layer, x, y, dir);
+		if (rn >= 0xf8)
+		{
+			startDir = dir;
+			break;
+		}
+	}
+	if (startDir == -1)
+		return true;
+
+	int dir = startDir;
+	int iter = 0;
+	while (iter < cont.cverts)
+	{
+		unsigned char rn = getNeighbourReg(layer, x, y, dir);
+
+		int nx = x;
+		int ny = y;
+		int ndir = dir;
+
+		if (rn >= 0xf8)
+		{
+			int px = x;
+			int pz = y;
+			switch (dir)
+			{
+			case 0: pz++; break;
+			case 1: px++; pz++; break;
+			case 2: px++; break;
+			}
+            int tidx(x + y * w);
+            unsigned char treg(layer.regs[tidx]);
+            const dtTileCacheContour& lcont(lcset.conts[treg]);
+            for (int i(0); i < lcont.nverts; ++i) {
+                unsigned char* lv(&lcont.verts[i * 4]);
+                if (lv[0] == px && lv[2] == pz)
+                {
+                    unsigned char* v = &cont.verts[cont.nverts++ * 4];
+                    v[0] = px;
+                    v[1] = layer.heights[tidx];
+                    v[2] = pz;
+                    v[3] = rn;
+                    break;
+                }
+            }
+            flag[tidx] |= 0x01 << dir;
+			ndir = (dir + 1) & 0x3;
+		}
+		else
+		{
+			nx = x + getDirOffsetX(dir);
+			ny = y + getDirOffsetY(dir);
+			ndir = (dir + 3) & 0x3;
+		}
+
+		if (iter > 0 && x == startX && y == startY && dir == startDir)
+			break;
+
+		x = nx;
+		y = ny;
+		dir = ndir;
+
+		iter++;
+	}
+
+	unsigned char* pa = &cont.verts[(cont.nverts - 1) * 4];
+	unsigned char* pb = &cont.verts[0];
+	if (pa[0] == pb[0] && pa[2] == pb[2])
+		cont.nverts--;
+
+	return true;
+}
 
 static float distancePtSeg(const int x, const int z,
 						   const int px, const int pz,
@@ -835,8 +941,233 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 	}
 	
 	return DT_SUCCESS;
-}	
+}
 
+struct TempContour
+{
+private:
+	dtTileCacheAlloc* m_alloc;
+	dtTileCacheContour* m_ptr;
+	int m_size;
+
+	void free()
+	{
+		if (m_alloc && m_ptr)
+		{
+			if (m_ptr->verts)
+			{
+				m_alloc->free(m_ptr->verts);
+				m_ptr->verts = nullptr;
+			}
+			m_alloc->free(m_ptr); 
+			m_alloc = nullptr;
+			m_ptr = nullptr;
+		}
+	}
+
+public:
+	inline TempContour(dtTileCacheAlloc* a, const int s) 
+		: m_alloc(a)
+		, m_ptr((dtTileCacheContour*)a->alloc(sizeof(dtTileCacheContour) * s))
+		, m_size(s) {}
+	inline ~TempContour() 
+	{ 
+		free();
+	}
+	inline operator dtTileCacheContour*() { return m_ptr; }
+	inline int size() const { return m_size; }
+	inline void operator=(TempContour& p)
+	{
+		free();
+
+		m_alloc = p.m_alloc;
+		m_ptr = p.m_ptr;
+		m_size = p.m_size;
+
+		p.m_alloc = nullptr;
+		p.m_ptr = nullptr;
+		p.m_size = 0;
+	}
+};
+dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
+                                 dtTileCacheLayer& layer,
+                                 const int walkableClimb,
+                                 const dtTileCacheContourSet& lcset,
+                                 dtTileCacheBorderSet& tbset)
+{
+	dtAssert(alloc);
+    if (layer.regCount == 0)
+        return DT_SUCCESS;
+
+	const int w((int)layer.header->width);
+	const int h((int)layer.header->height);
+
+	dtFixedArray<unsigned char> flag(alloc, w * h);
+	if (!flag)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	memset(flag, 0xff, w * h);
+    
+    int maxTempVerts(0);
+    for (int z = 0; z < h; ++z)
+    {
+        for (int x = 0; x < w; ++x)
+        {
+            int id(x + z * w), n(0);
+            if (layer.regs[id] == 0xff)
+                continue;
+
+            for (int dir(0); dir < 4; ++dir)
+            {
+                const unsigned char nreg(getNeighbourReg(layer, x, z, dir));
+                if (nreg >= 0xf8)
+                    ++n;
+            }
+            if (n > 0)
+            {
+                flag[id] = 0;
+                ++maxTempVerts;
+            }
+        }
+    }
+    if (maxTempVerts == 0)
+        return DT_SUCCESS;
+    
+    maxTempVerts *= 4;
+    
+    int ncont(0), ccont(layer.regCount * 8);
+    TempContour conts(alloc, ccont);
+    if (!conts)
+        return DT_FAILURE | DT_OUT_OF_MEMORY;
+    memset(conts, 0, sizeof(dtTileCacheContour) * ccont);
+
+
+	dtFixedArray<unsigned char> tempVerts(alloc, maxTempVerts * 4);
+	if (!tempVerts)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+	dtFixedArray<unsigned short> tempPoly(alloc, maxTempVerts);
+	if (!tempPoly)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+	dtTempContour temp(tempVerts, maxTempVerts, tempPoly, maxTempVerts);
+
+	int nvert(0);
+	for (int y = 0; y < h; ++y)
+	{
+		for (int x = 0; x < w; ++x)
+		{
+			const int idx(x + y * w);
+			if (flag[idx] == 0xff)
+				continue;
+
+			if (!walkBorder(layer, lcset, flag, x, y, temp))
+				return DT_FAILURE | DT_BUFFER_TOO_SMALL;
+            
+			if (temp.nverts > 0)
+			{
+                dtAssert(temp.nverts <= maxTempVerts);
+				if (ncont == ccont)
+				{
+					ccont *= 2;
+					TempContour tconts(alloc, ccont);
+					if (!tconts)
+						return DT_FAILURE | DT_OUT_OF_MEMORY;
+					memset(tconts, 0, sizeof(dtTileCacheContour) * ccont);
+
+					memcpy(tconts, conts, sizeof(dtTileCacheContour) * ncont);
+					conts = tconts;
+				}
+				dtTileCacheContour& cont(conts[ncont++]);
+				cont.verts = (unsigned char*)alloc->alloc(sizeof(unsigned char) * 4 * temp.nverts);
+				if (!cont.verts)
+					return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+				for (int i = 0, j = temp.nverts - 1; i < temp.nverts; j = i++)
+				{
+					unsigned char* v(& temp.verts[j * 4]);
+					unsigned char* vn(& temp.verts[i * 4]);
+					unsigned char nei(vn[3]); 
+					bool shouldRemove(false);
+					unsigned char lh(getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2],
+						walkableClimb, shouldRemove));
+
+					unsigned char portal(0xff);
+					if (nei != 0xff && nei >= 0xf8)
+					{
+						portal = nei - 0xf8;
+						if (!shouldRemove)
+						{
+							int n = 0;
+							for (int dz = -1; dz <= 0; ++dz)
+							{
+								for (int dx = -1; dx <= 0; ++dx)
+								{
+									const int px(v[0] + dx);
+									const int pz(v[2] + dz);
+									if (px >= 0 && pz >= 0 && px < w && pz < h)
+									{
+										const int idx(px + pz * w);
+										const int lh((int)layer.heights[idx]);
+										if (dtAbs(lh - y) <= walkableClimb && layer.areas[idx] != DT_TILECACHE_NULL_AREA)
+										{
+											++n;
+										}
+									}
+								}
+							}
+							shouldRemove = n == 4;
+						}
+					}
+					if (shouldRemove)
+						continue;
+
+					unsigned char* dst(&cont.verts[cont.nverts++ * 4]);
+					dst[0] = v[0];
+					dst[1] = lh;
+					dst[2] = v[2];
+					dst[3] = portal;
+				}
+				//dtAssert(cont.nverts > 2);
+				nvert += cont.nverts;
+			}
+		}
+	}
+	int nborder(ncont);
+	//for (int i(0); i< ncont; ++i)
+	//{
+	//	dtTileCacheContour& cont(conts[i]);
+	//	if (cont.nverts > 0)
+	//		++nborder;
+	//}
+	if (nvert > 0 && nborder > 0)
+	{
+		tbset.splits = (int*)alloc->alloc(sizeof(int) * nborder);
+		if (!tbset.splits)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+		tbset.vertices = (unsigned short*)alloc->alloc(dtAlign4(sizeof(unsigned short) * nvert * 4));
+		if (!tbset.vertices)
+			return DT_FAILURE | DT_OUT_OF_MEMORY;
+
+		nvert = 0;
+		for (int i(0); i < ncont; ++i)
+		{
+			dtTileCacheContour& cont(conts[i]);
+			for (int j(0); j < cont.nverts; ++j)
+			{
+				unsigned char* v(&cont.verts[j * 4]);
+				unsigned short* tv(&tbset.vertices[nvert++ * 4]);
+				tv[0] = v[0];
+				tv[1] = v[1];
+				tv[2] = v[2];
+				tv[3] = v[3];
+			}
+            tbset.splits[tbset.nborders++] = nvert;
+		}
+	}
+
+	return DT_SUCCESS;
+}
 
 
 static const int VERTEX_BUCKET_COUNT2 = (1<<8);

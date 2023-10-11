@@ -64,6 +64,13 @@ struct dtTileCacheContourSet
 	dtTileCacheContour* conts;
 };
 
+struct dtTileCacheBorderSet
+{
+	int nborders;
+	int* splits;
+	unsigned short* vertices;
+};
+
 struct dtTileCachePolyMesh
 {
 	int nvp;
@@ -121,6 +128,9 @@ dtStatus dtDecompressTileCacheLayer(dtTileCacheAlloc* alloc, dtTileCacheCompress
 dtTileCacheContourSet* dtAllocTileCacheContourSet(dtTileCacheAlloc* alloc);
 void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* cset);
 
+dtTileCacheBorderSet* dtAllocTileCacheBorderSet(dtTileCacheAlloc* alloc);
+void dtFreeTileCacheBorderSet(dtTileCacheAlloc* alloc, dtTileCacheBorderSet* cset);
+
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc);
 void dtFreeTileCachePolyMesh(dtTileCacheAlloc* alloc, dtTileCachePolyMesh* lmesh);
 
@@ -141,6 +151,11 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
 								  dtTileCacheContourSet& lcset);
+dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
+								  dtTileCacheLayer& layer,
+								  const int walkableClimb,
+                                  const dtTileCacheContourSet& lcset,
+								  dtTileCacheBorderSet& tbset);
 
 dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 								  dtTileCacheContourSet& lcset,

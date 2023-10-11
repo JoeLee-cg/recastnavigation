@@ -134,6 +134,20 @@ inline void freeLink(dtMeshTile* tile, unsigned int link)
 	tile->linksFreeList = link;
 }
 
+inline unsigned int allocBorderLink(dtMeshExtra* extra)
+{
+	if (extra->linksFreeList == DT_NULL_LINK)
+		return DT_NULL_LINK;
+	unsigned int link = extra->linksFreeList;
+	extra->linksFreeList = extra->links[link].next;
+	return link;
+}
+
+inline void freeBorderLink(dtMeshExtra* extra, unsigned int link)
+{
+	extra->links[link].next = extra->linksFreeList;
+	extra->linksFreeList = link;
+}
 
 dtNavMesh* dtAllocNavMesh()
 {
@@ -237,10 +251,14 @@ dtStatus dtNavMesh::init(const dtNavMeshParams* params)
 	m_tiles = (dtMeshTile*)dtAlloc(sizeof(dtMeshTile)*m_maxTiles, DT_ALLOC_PERM);
 	if (!m_tiles)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	m_extras = (dtMeshExtra*)dtAlloc(sizeof(dtMeshExtra)*m_maxTiles, DT_ALLOC_PERM);
+	if (!m_extras)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	m_posLookup = (dtMeshTile**)dtAlloc(sizeof(dtMeshTile*)*m_tileLutSize, DT_ALLOC_PERM);
 	if (!m_posLookup)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	memset(m_tiles, 0, sizeof(dtMeshTile)*m_maxTiles);
+	memset(m_extras, 0, sizeof(dtMeshExtra)*m_maxTiles);
 	memset(m_posLookup, 0, sizeof(dtMeshTile*)*m_tileLutSize);
 	m_nextFree = 0;
 	for (int i = m_maxTiles-1; i >= 0; --i)
@@ -757,6 +775,97 @@ void dtNavMesh::closestPointOnPoly(dtPolyRef ref, const float* pos, float* close
 	closestPointOnDetailEdges<true>(tile, poly, pos, closest);
 }
 
+dtPolyRef dtNavMesh::getExtraRef(const dtMeshExtra* extra) const
+{
+	if (!extra) return 0;
+	const unsigned int it = (unsigned int)(extra - m_extras);
+	return encodePolyId(extra->salt, it, 0);
+}
+
+dtPolyRef dtNavMesh::getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const
+{
+	if (!extra) return 0;
+	const unsigned int it = (unsigned int)(extra - m_extras);
+	return encodePolyId(extra->salt, it, ib);
+}
+
+bool dtNavMesh::findBorderPortalVert(const float* vert, unsigned short& dir, dtMeshExtra* extra,
+									const int& start,
+									dtPolyRef& nborder, int& nvert)
+{
+	for (int j(start); j < extra->header->borderCount; ++j)
+	{
+		int evertCount(extra->splits[j]);
+		int vstart(j == 0 ? 0 : extra->splits[j - 1]);
+		for (int jj(vstart); j < evertCount; ++j)
+		{
+			unsigned short enei(extra->neis[jj] & 0xff);
+			if (enei == 0xff || enei < 0xf8)
+				continue;
+
+			unsigned short edir(enei - 0xf8);
+			if (dtAbs(edir - dir) != 2)
+				continue;
+
+			const float* evert(&extra->vertices[jj * 3]);
+			if (dtAbs(evert[0] - vert[0]) < 0.01f
+				|| dtAbs(evert[1] - vert[1]) < 0.01f
+				|| dtAbs(evert[2] - vert[2]) < 0.01f)
+			{
+				nborder = getBorderRef(extra, j);
+				nvert = jj;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool dtNavMesh::findNeibBorderPortalVert(const int& tileX, const int& tileY, 
+										const float* vert, unsigned short& dir, dtPolyRef& nborder, int& nvert)
+{
+	static const int MAX_NEIS = 32;
+	dtMeshTile* neis[MAX_NEIS];
+	int nneis;
+	for (int i = 0; i < 8; ++i)
+	{
+		nneis = getNeighbourTilesAt(tileX, tileY, i, neis, MAX_NEIS);
+		for (int j = 0; j < nneis; ++j)
+		{
+			dtTileRef ntileRef(getTileRef(neis[j]));
+			const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+			dtMeshExtra* nextra(&m_extras[ntileIndex]);
+			if (!nextra->header)
+				continue;
+			if (findBorderPortalVert(vert, dir, nextra, 0, nborder, nvert))
+				return true;
+		}
+	}
+	return false;
+}
+
+dtMeshTile* dtNavMesh::getTileByIndex(const int& i)
+{
+	if (i >= 0 && i < getMaxTiles())
+	{
+		dtMeshTile* tile(&m_tiles[i]);
+		if (tile && tile->header)
+			return tile;
+	}
+	return nullptr;
+}
+
+dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i)
+{
+	if (i >= 0 && i < getMaxTiles())
+	{
+		dtMeshExtra* extra(&m_extras[i]);
+		if (extra && extra->header)
+			return extra;
+	}
+	return nullptr;
+}
+
 dtPolyRef dtNavMesh::findNearestPolyInTile(const dtMeshTile* tile,
 										   const float* center, const float* halfExtents,
 										   float* nearestPt) const
@@ -906,7 +1015,8 @@ int dtNavMesh::queryPolygonsInTile(const dtMeshTile* tile, const float* qmin, co
 ///
 /// @see dtCreateNavMeshData, #removeTile
 dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
-							dtTileRef lastRef, dtTileRef* result)
+							dtTileRef lastRef, dtTileRef* result,
+							unsigned char* extraData, int extraDataSize)
 {
 	// Make sure the data is in right format.
 	dtMeshHeader* header = (dtMeshHeader*)data;
@@ -1050,6 +1160,64 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 	
 	if (result)
 		*result = getTileRef(tile);
+
+	dtTileRef tileRef(getTileRef(tile));
+	const int tileIndex(decodePolyIdTile((dtPolyRef)tileRef));
+	dtMeshExtra* extra(&m_extras[tileIndex]);
+	memset(extra, 0, sizeof(dtMeshExtra));
+	if (extraData)
+	{
+		dtMeshExtraHeader* extraHeader((dtMeshExtraHeader*)extraData);
+		const int extraHeaderSize(dtAlign4(sizeof(dtMeshExtraHeader)));
+		const int vertSize(dtAlign4(sizeof(float) * 3 * extraHeader->vertCount));
+		const int borderSizer(dtAlign4(sizeof(int) * extraHeader->borderCount));
+		const int neiSize(dtAlign4(sizeof(unsigned short) * extraHeader->vertCount));
+		const int linkIndexSize(dtAlign4(sizeof(unsigned int) * extraHeader->vertCount));
+		const int borderLinkSize(dtAlign4(sizeof(dtBorderLink) * extraHeader->linkCount));
+
+		extra->header = extraHeader;
+		extra->data = extraData;
+		extra->dataSize = extraDataSize;
+		extra->salt =  tile->salt;
+
+		unsigned char* d(extraData + extraHeaderSize);
+		extra->vertices = (float*)d; d += vertSize;
+		extra->splits = (int*)d; d += borderSizer;
+		extra->neis = (unsigned short*)d; d += neiSize;
+		extra->linkIndices = (unsigned int*)d; d += linkIndexSize;
+		extra->links = (dtBorderLink*)d; d += borderLinkSize;
+
+		memset(extra->linkIndices, DT_NULL_LINK, linkIndexSize);
+		for (int i(0); i < extraHeader->borderCount; ++i)
+		{
+			int vertCount(extra->splits[i]);
+			int vstart(i == 0 ? 0 : extra->splits[i - 1]);
+			for (int ii(vstart); ii < vertCount; ++ii)
+			{
+				unsigned short nei(extra->neis[ii] & 0xff);
+				if (nei == 0xff || nei < 0xf8)
+					continue;
+
+				unsigned short dir(nei - 0xf8);
+				const float* vert(&extra->vertices[ii * 3]);
+				dtPolyRef nborder(0); 
+				int nvert(0);
+
+				if (!findBorderPortalVert(vert, dir, extra, i + 1, nborder, nvert))
+					if (!findNeibBorderPortalVert(header->x, header->y, vert, dir, nborder, nvert))
+						continue;
+
+				unsigned int lindex(allocBorderLink(extra));
+				if (lindex == DT_NULL_LINK)
+					continue;
+
+				dtBorderLink* borderLink(&extra->links[lindex]);
+				borderLink->borderId = nborder;
+				borderLink->vertIndex = nvert;
+				extra->linkIndices[ii] = lindex;
+			}
+		}
+	}
 	
 	return DT_SUCCESS;
 }
@@ -1237,7 +1405,8 @@ bool dtNavMesh::isValidPolyRef(dtPolyRef ref) const
 /// it can be added back to the navigation mesh at a later point.
 ///
 /// @see #addTile
-dtStatus dtNavMesh::removeTile(dtTileRef ref, unsigned char** data, int* dataSize)
+dtStatus dtNavMesh::removeTile(dtTileRef ref, unsigned char** data, int* dataSize,
+								unsigned char** extraData, int* extraDataSize)
 {
 	if (!ref)
 		return DT_FAILURE | DT_INVALID_PARAM;
@@ -1328,6 +1497,9 @@ dtStatus dtNavMesh::removeTile(dtTileRef ref, unsigned char** data, int* dataSiz
 	// Add to free list.
 	tile->next = m_nextFree;
 	m_nextFree = tile;
+
+	dtMeshExtra* extra(&m_extras[tileIndex]);
+	memset(extra, 0, sizeof(dtMeshExtra));
 
 	return DT_SUCCESS;
 }

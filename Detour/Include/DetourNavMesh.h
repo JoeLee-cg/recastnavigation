@@ -275,6 +275,12 @@ struct dtMeshHeader
 	/// The bounding volume quantization factor. 
 	float bvQuantFactor;
 };
+struct dtMeshExtraHeader
+{
+	int borderCount;
+	int vertCount;
+	int linkCount;
+};
 
 /// Defines a navigation mesh tile.
 /// @ingroup detour
@@ -309,6 +315,29 @@ struct dtMeshTile
 private:
 	dtMeshTile(const dtMeshTile&);
 	dtMeshTile& operator=(const dtMeshTile&);
+};
+
+struct dtBorderLink
+{
+	dtPolyRef borderId;
+	int vertIndex;
+	unsigned int next;
+};
+struct dtMeshExtra
+{
+	unsigned int salt;
+
+	unsigned int linksFreeList;
+	dtBorderLink* links;
+
+	dtMeshExtraHeader* header;
+	unsigned char* data;
+	int dataSize;
+
+	float* vertices;
+	int* splits;
+	unsigned short* neis;
+	unsigned int* linkIndices;
 };
 
 /// Get flags for edge in detail triangle.
@@ -361,20 +390,25 @@ public:
 	const dtNavMeshParams* getParams() const;
 
 	/// Adds a tile to the navigation mesh.
-	///  @param[in]		data		Data for the new tile mesh. (See: #dtCreateNavMeshData)
-	///  @param[in]		dataSize	Data size of the new tile mesh.
-	///  @param[in]		flags		Tile flags. (See: #dtTileFlags)
-	///  @param[in]		lastRef		The desired reference for the tile. (When reloading a tile.) [opt] [Default: 0]
-	///  @param[out]	result		The tile reference. (If the tile was succesfully added.) [opt]
+	///  @param[in]		data			Data for the new tile mesh. (See: #dtCreateNavMeshData)
+	///  @param[in]		dataSize		Data size of the new tile mesh.
+	///  @param[in]		extraData		Extra Data for the new tile mesh. (See: #dtCreateNavMeshExtraData)
+	///  @param[in]		extraDataSize	Extra Data size of the new tile mesh.
+	///  @param[in]		flags			Tile flags. (See: #dtTileFlags)
+	///  @param[in]		lastRef			The desired reference for the tile. (When reloading a tile.) [opt] [Default: 0]
+	///  @param[out]	result			The tile reference. (If the tile was succesfully added.) [opt]
 	/// @return The status flags for the operation.
-	dtStatus addTile(unsigned char* data, int dataSize, int flags, dtTileRef lastRef, dtTileRef* result);
+	dtStatus addTile(unsigned char* data, int dataSize, int flags, 
+					dtTileRef lastRef, dtTileRef* result, 
+					unsigned char* extraData = nullptr, int extraDataSize = 0);
 	
 	/// Removes the specified tile from the navigation mesh.
 	///  @param[in]		ref			The reference of the tile to remove.
 	///  @param[out]	data		Data associated with deleted tile.
 	///  @param[out]	dataSize	Size of the data associated with deleted tile.
 	/// @return The status flags for the operation.
-	dtStatus removeTile(dtTileRef ref, unsigned char** data, int* dataSize);
+	dtStatus removeTile(dtTileRef ref, unsigned char** data, int* dataSize,
+						unsigned char** extraData = nullptr, int* extraDataSize = nullptr);
 
 	/// @}
 
@@ -674,6 +708,20 @@ private:
 #endif
 
 	friend class dtNavMeshQuery;
+
+private:
+	dtMeshExtra* m_extras;				///< List of extras.
+public:
+	dtPolyRef getExtraRef(const dtMeshExtra* extra) const;
+	dtPolyRef getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const;
+	bool findBorderPortalVert(const float* vert, unsigned short& dir, dtMeshExtra* extra,
+								const int& start,
+								dtPolyRef& nborder, int& nvert);
+	bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
+								const float* vert, unsigned short& dir, dtPolyRef& nborder, int& nvert);
+
+	dtMeshTile* getTileByIndex(const int& i);
+	dtMeshExtra* getExtraByIndex(const int& i);
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

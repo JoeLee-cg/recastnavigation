@@ -657,6 +657,72 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 	return true;
 }
 
+bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreateParams* extraParams, unsigned char** outData, int* outDataSize)
+{
+	if (!extraParams->nborders || !extraParams->splits)
+		return false;
+	if (!extraParams->vertices)
+		return false;
+
+	const int vertCount(extraParams->splits[extraParams->nborders - 1]);
+	if (vertCount <= 0)
+		return false;
+
+	int linkCount(0);
+	for (int i(0); i < vertCount; ++i)
+	{
+		unsigned short nei(extraParams->vertices[i * 4 + 3] & 0xff);
+		if (nei != 0xff && nei >= 0xf8)
+			++linkCount;
+	}
+	const int headerSize(dtAlign4(sizeof(dtMeshExtraHeader)));
+	const int vertSize(dtAlign4(sizeof(float) * 3 * vertCount));
+	const int borderSize(dtAlign4(sizeof(int) * extraParams->nborders));
+	const int neiSize(dtAlign4(sizeof(unsigned short) * vertCount));
+	const int linkIndexSize(dtAlign4(sizeof(unsigned int) * vertCount));
+	const int linkSize(dtAlign4(sizeof(dtBorderLink) * linkCount));
+
+	const int dataSize(headerSize + vertSize + borderSize + neiSize + linkIndexSize + linkSize);
+	unsigned char* data = (unsigned char*)dtAlloc(sizeof(unsigned char)*dataSize, DT_ALLOC_PERM);
+	if (!data)
+	{
+		return false;
+	}
+	memset(data, 0, dataSize);
+	
+	unsigned char* d = data;
+	dtMeshExtraHeader* header((dtMeshExtraHeader*)d); d += headerSize;
+	float* vertices((float*)d); d += vertSize;
+	int* borderSplits((int*)d); d += borderSize;
+	unsigned short* neis((unsigned short*)d); d += neiSize;
+	unsigned int* linkIndices((unsigned int*)d); d += linkIndexSize;
+
+	header->borderCount = extraParams->nborders;
+	header->vertCount = vertCount;
+	header->linkCount = linkCount;
+
+	for (int i(0); i < vertCount; ++i)
+	{
+		const unsigned short* iv = &extraParams->vertices[i * 4];
+		float* v = &vertices[i * 3];
+		v[0] = params->bmin[0] + iv[0] * params->cs;
+		v[1] = params->bmin[1] + iv[1] * params->ch;
+		v[2] = params->bmin[2] + iv[2] * params->cs;
+        dtAssert(v[0] != NAN && v[1] != NAN && v[2] != NAN);
+
+		neis[i] = iv[3];
+	}
+	for (int i(0); i < extraParams->nborders; ++i)
+	{
+		borderSplits[i] = extraParams->splits[i];
+	}
+
+	*outData = data;
+	*outDataSize = dataSize;
+
+	return true;
+}
+
 bool dtNavMeshHeaderSwapEndian(unsigned char* data, const int /*dataSize*/)
 {
 	dtMeshHeader* header = (dtMeshHeader*)data;

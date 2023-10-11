@@ -104,6 +104,13 @@ struct dtNavMeshCreateParams
 	/// @}
 };
 
+struct dtNavMeshExtraCreateParams
+{
+	int nborders;
+	int* splits;
+	unsigned short* vertices;
+};
+
 /// Builds navigation mesh tile data from the provided tile creation data.
 /// @ingroup detour
 ///  @param[in]		params		Tile creation data.
@@ -111,6 +118,7 @@ struct dtNavMeshCreateParams
 ///  @param[out]	outDataSize	The size of the tile data array.
 /// @return True if the tile data was successfully created.
 bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData, int* outDataSize);
+bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreateParams* extraParams, unsigned char** outData, int* outDataSize);
 
 /// Swaps the endianess of the tile data's header (#dtMeshHeader).
 ///  @param[in,out]	data		The tile data array.
