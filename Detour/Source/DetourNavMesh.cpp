@@ -1499,7 +1499,12 @@ dtStatus dtNavMesh::removeTile(dtTileRef ref, unsigned char** data, int* dataSiz
 	m_nextFree = tile;
 
 	dtMeshExtra* extra(&m_extras[tileIndex]);
-	memset(extra, 0, sizeof(dtMeshExtra));
+    if (extra->header)
+    {
+        *extraData = extra->data;
+        *extraDataSize = extra->dataSize;
+        memset(extra, 0, sizeof(dtMeshExtra));
+    }
 
 	return DT_SUCCESS;
 }

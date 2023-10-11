@@ -502,12 +502,6 @@ void drawTiles(duDebugDraw* dd, dtTileCache* tc)
 
 }
 
-static void logLine(BuildContext& ctx, rcTimerLabel label, const char* name)
-{
-	const int t = ctx.getAccumulatedTime(label);
-	if (t < 0) return;
-	ctx.log(RC_LOG_PROGRESS, "%s:\t%.2fms\t(%.1f%%)", name, t/1000.0f, t);
-}
 void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh)
 {
 	if(!mesh)
