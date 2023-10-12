@@ -711,17 +711,24 @@ private:
 
 private:
 	dtMeshExtra* m_extras;				///< List of extras.
+	int extraVertCount;
 public:
 	dtPolyRef getExtraRef(const dtMeshExtra* extra) const;
 	dtPolyRef getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const;
-	bool findBorderPortalVert(const float* vert, unsigned short& dir, dtMeshExtra* extra,
-								const int& start,
+	bool findBorderPortalVert(const float* vert, unsigned char& dir, dtMeshExtra* extra,
+								const int& start, bool bStart,
 								dtPolyRef& nborder, int& nvert);
 	bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
-								const float* vert, unsigned short& dir, dtPolyRef& nborder, int& nvert);
+								const float* vert, unsigned char& dir, bool bStart, dtPolyRef& nborder, int& nvert);
 
 	dtMeshTile* getTileByIndex(const int& i);
 	dtMeshExtra* getExtraByIndex(const int& i);
+	dtMeshExtra* getExtra(const dtPolyRef& ref);
+	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
+private:
+	bool walkBorder(const int& extraIdx, const int& borderIdx,const int&vertIdx,
+								const int& maxVertPerExtra, unsigned char* flags,
+								float* verts, int& vertCount) const;
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

@@ -582,16 +582,12 @@ static bool walkBorder(dtTileCacheLayer& layer, const dtTileCacheContourSet& lcs
 	if (startDir == -1)
 		return true;
 
-	int dir = startDir;
-	int iter = 0;
+	int dir(startDir), iter(0), ldir(dir), lrn(0xff);
 	while (iter < cont.cverts)
 	{
 		unsigned char rn = getNeighbourReg(layer, x, y, dir);
 
-		int nx = x;
-		int ny = y;
-		int ndir = dir;
-
+		int nx(x), ny(y), ndir(dir);
 		if (rn >= 0xf8)
 		{
 			int px = x;
@@ -605,19 +601,30 @@ static bool walkBorder(dtTileCacheLayer& layer, const dtTileCacheContourSet& lcs
             int tidx(x + y * w);
             unsigned char treg(layer.regs[tidx]);
             const dtTileCacheContour& lcont(lcset.conts[treg]);
-            for (int i(0); i < lcont.nverts; ++i) {
+            for (int i(0); i < lcont.nverts; ++i)
+            {
                 unsigned char* lv(&lcont.verts[i * 4]);
                 if (lv[0] == px && lv[2] == pz)
                 {
+                    unsigned char portal(0x0f);
+                    if (rn != 0xff)
+                    {
+                        portal = rn - 0xf8;
+                        if (ldir == dir && lrn != 0xff && lrn >= 0xf8)
+                            portal |= 0x80;
+                    }
                     unsigned char* v = &cont.verts[cont.nverts++ * 4];
                     v[0] = px;
                     v[1] = layer.heights[tidx];
                     v[2] = pz;
-                    v[3] = rn;
+                    v[3] = portal;
+                    
                     break;
                 }
             }
             flag[tidx] |= 0x01 << dir;
+            ldir = dir;
+            lrn = rn;
 			ndir = (dir + 1) & 0x3;
 		}
 		else
@@ -633,14 +640,17 @@ static bool walkBorder(dtTileCacheLayer& layer, const dtTileCacheContourSet& lcs
 		x = nx;
 		y = ny;
 		dir = ndir;
-
-		iter++;
+        
+        ++iter;
 	}
 
 	unsigned char* pa = &cont.verts[(cont.nverts - 1) * 4];
 	unsigned char* pb = &cont.verts[0];
 	if (pa[0] == pb[0] && pa[2] == pb[2])
-		cont.nverts--;
+    {
+        pb[3] = pa[3];
+        cont.nverts--;
+    }
 
 	return true;
 }
@@ -1051,7 +1061,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 
 	dtTempContour temp(tempVerts, maxTempVerts, tempPoly, maxTempVerts);
 
-	int nvert(0);
+	int nvert(0), linkCount(0);
 	for (int y = 0; y < h; ++y)
 	{
 		for (int x = 0; x < w; ++x)
@@ -1078,56 +1088,60 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 					conts = tconts;
 				}
 				dtTileCacheContour& cont(conts[ncont++]);
-				cont.verts = (unsigned char*)alloc->alloc(sizeof(unsigned char) * 4 * temp.nverts);
+				int vertSize(sizeof(unsigned char) * 5 * temp.nverts);
+				cont.verts = (unsigned char*)alloc->alloc(vertSize);
 				if (!cont.verts)
 					return DT_FAILURE | DT_OUT_OF_MEMORY;
 
+				memset(cont.verts, 0, vertSize);
 				for (int i = 0, j = temp.nverts - 1; i < temp.nverts; j = i++)
 				{
-					unsigned char* v(& temp.verts[j * 4]);
 					unsigned char* vn(& temp.verts[i * 4]);
 					unsigned char nei(vn[3]); 
+                    if (nei & 0x80)
+                        continue;
+
+                    unsigned char* v(& temp.verts[j * 4]);
 					bool shouldRemove(false);
-					unsigned char lh(getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2],
-						walkableClimb, shouldRemove));
+					unsigned char lh(getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2], walkableClimb, shouldRemove));
+                    unsigned char portal(0xff);
+                    nei &= 0x0f;
+                    if (nei != 0x0f && nei >= 0)
+                        portal = nei;
 
-					unsigned char portal(0xff);
-					if (nei != 0xff && nei >= 0xf8)
-					{
-						portal = nei - 0xf8;
-						if (!shouldRemove)
-						{
-							int n = 0;
-							for (int dz = -1; dz <= 0; ++dz)
-							{
-								for (int dx = -1; dx <= 0; ++dx)
-								{
-									const int px(v[0] + dx);
-									const int pz(v[2] + dz);
-									if (px >= 0 && pz >= 0 && px < w && pz < h)
-									{
-										const int idx(px + pz * w);
-										const int lh((int)layer.heights[idx]);
-										if (dtAbs(lh - y) <= walkableClimb && layer.areas[idx] != DT_TILECACHE_NULL_AREA)
-										{
-											++n;
-										}
-									}
-								}
-							}
-							shouldRemove = n == 4;
-						}
-					}
-					if (shouldRemove)
-						continue;
-
-					unsigned char* dst(&cont.verts[cont.nverts++ * 4]);
+					unsigned char* dst(&cont.verts[cont.nverts++ * 5]);
 					dst[0] = v[0];
 					dst[1] = lh;
 					dst[2] = v[2];
 					dst[3] = portal;
 				}
-				//dtAssert(cont.nverts > 2);
+				int start(0);
+				for (int i(0), j(cont.nverts - 1); i < cont.nverts; j = i++)
+				{
+					unsigned short pnei(cont.verts[j * 5 + 3]);
+					unsigned short nei(cont.verts[i * 5 + 3]);
+					if (pnei == 0xff && nei != 0xff)
+					{
+						start = i;
+						break;
+					}
+				}
+				for (int i(0); i < cont.nverts; ++i)
+				{
+					int sidx((start + i) % cont.nverts);
+					unsigned char* sv(&cont.verts[sidx * 5]);
+					if (sv[3] != 0xff)
+					{
+						int eidx(sidx == nvert - 1 ? 0 : sidx + 1);
+						unsigned char* ev(&cont.verts[eidx * 5]);
+						unsigned char enei(ev[3]);
+						dtAssert((enei & 0x02) || enei != 0xff);
+						sv[4] |= 0x01;
+						ev[4] |= 0x02;
+						++linkCount;
+					}
+				}
+				//dtAssert(cont.nverts > 1);
 				nvert += cont.nverts;
 			}
 		}
@@ -1149,18 +1163,20 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 		if (!tbset.vertices)
 			return DT_FAILURE | DT_OUT_OF_MEMORY;
 
+		tbset.linkCount = linkCount;
 		nvert = 0;
 		for (int i(0); i < ncont; ++i)
 		{
 			dtTileCacheContour& cont(conts[i]);
-			for (int j(0); j < cont.nverts; ++j)
+			for (int i(0); i < cont.nverts; ++i)
 			{
-				unsigned char* v(&cont.verts[j * 4]);
+				unsigned char* v(&cont.verts[i * 5]);
 				unsigned short* tv(&tbset.vertices[nvert++ * 4]);
 				tv[0] = v[0];
 				tv[1] = v[1];
 				tv[2] = v[2];
 				tv[3] = v[3];
+				tv[3] |= ((unsigned short)v[4]) << 8;
 			}
             tbset.splits[tbset.nborders++] = nvert;
 		}

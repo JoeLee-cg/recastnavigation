@@ -106,6 +106,7 @@ struct dtNavMeshCreateParams
 
 struct dtNavMeshExtraCreateParams
 {
+	int linkCount;
 	int nborders;
 	int* splits;
 	unsigned short* vertices;

@@ -777,6 +777,7 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	{
 		dtNavMeshExtraCreateParams extraParams;
 		memset(&extraParams, 0, sizeof(extraParams));
+		extraParams.linkCount = bc.tbset->linkCount;
 		extraParams.nborders = bc.tbset->nborders;
 		extraParams.splits = bc.tbset->splits;
 		extraParams.vertices = bc.tbset->vertices;

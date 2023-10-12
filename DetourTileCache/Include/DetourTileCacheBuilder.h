@@ -67,6 +67,7 @@ struct dtTileCacheContourSet
 struct dtTileCacheBorderSet
 {
 	int nborders;
+	int linkCount;
 	int* splits;
 	unsigned short* vertices;
 };

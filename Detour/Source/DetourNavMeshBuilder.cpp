@@ -668,22 +668,15 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 	if (vertCount <= 0)
 		return false;
 
-	int linkCount(0);
-	for (int i(0); i < vertCount; ++i)
-	{
-		unsigned short nei(extraParams->vertices[i * 4 + 3] & 0xff);
-		if (nei != 0xff && nei >= 0xf8)
-			++linkCount;
-	}
 	const int headerSize(dtAlign4(sizeof(dtMeshExtraHeader)));
 	const int vertSize(dtAlign4(sizeof(float) * 3 * vertCount));
 	const int borderSize(dtAlign4(sizeof(int) * extraParams->nborders));
-	const int neiSize(dtAlign4(sizeof(unsigned short) * vertCount));
+	const int nieSize(dtAlign4(sizeof(unsigned short) * vertCount));
 	const int linkIndexSize(dtAlign4(sizeof(unsigned int) * vertCount));
-	const int linkSize(dtAlign4(sizeof(dtBorderLink) * linkCount));
+	const int linkSize(dtAlign4(sizeof(dtBorderLink) * extraParams->linkCount));
 
-	const int dataSize(headerSize + vertSize + borderSize + neiSize + linkIndexSize + linkSize);
-	unsigned char* data = (unsigned char*)dtAlloc(sizeof(unsigned char)*dataSize, DT_ALLOC_PERM);
+	const int dataSize(headerSize + vertSize + borderSize + nieSize + linkIndexSize + linkSize);
+	unsigned char* data = (unsigned char*)dtAlloc(sizeof(unsigned char) * dataSize, DT_ALLOC_PERM);
 	if (!data)
 	{
 		return false;
@@ -694,12 +687,12 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 	dtMeshExtraHeader* header((dtMeshExtraHeader*)d); d += headerSize;
 	float* vertices((float*)d); d += vertSize;
 	int* borderSplits((int*)d); d += borderSize;
-	unsigned short* neis((unsigned short*)d); d += neiSize;
+	unsigned short* neis((unsigned short*)d); d += nieSize;
 	unsigned int* linkIndices((unsigned int*)d); d += linkIndexSize;
 
 	header->borderCount = extraParams->nborders;
 	header->vertCount = vertCount;
-	header->linkCount = linkCount;
+	header->linkCount = extraParams->linkCount;
 
 	for (int i(0); i < vertCount; ++i)
 	{
@@ -708,7 +701,6 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 		v[0] = params->bmin[0] + iv[0] * params->cs;
 		v[1] = params->bmin[1] + iv[1] * params->ch;
 		v[2] = params->bmin[2] + iv[2] * params->cs;
-        dtAssert(v[0] != NAN && v[1] != NAN && v[2] != NAN);
 
 		neis[i] = iv[3];
 	}
