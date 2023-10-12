@@ -885,8 +885,9 @@ bool dtNavMesh::walkBorder(const int& extraIdx, const int& borderIdx,const int&v
 							float* verts, int& vertCount) const
 {
 	int iter(0), iextra(extraIdx), iborder(borderIdx), ivert(vertIdx);
-	while (iter++ < extraVertCount)
+	while (iter < extraVertCount)
 	{
+        ++iter;
 		if (vertCount == extraVertCount)
 			return false;
 
