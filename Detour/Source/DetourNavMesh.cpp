@@ -880,11 +880,11 @@ bool dtNavMesh::walkBorder(const int& extraIdx, const int& borderIdx,const int&v
 {
     int startVertCount(vertCount);
 	int iter(0), iextra(extraIdx), iborder(borderIdx), ivert(vertIdx);
-	while (iter < extraVertCount * 5)
+	while (iter < extraVertCount)
 	{
         ++iter;
-		if (vertCount == extraVertCount * 5)
-			return true;
+		if (vertCount == extraVertCount)
+			return false;
 
 		dtMeshExtra* extra(&m_extras[iextra]);
 		const float* v(&extra->vertices[ivert * 3]);
@@ -948,7 +948,7 @@ bool dtNavMesh::getBorders(float*& vertices, int& vertCount, int*& borders, int&
 		return false;
 	memset(flags, 0, flagSize);
 
-	int vertSize(sizeof(float) * extraVertCount * 5 * 3);
+	int vertSize(sizeof(float) * extraVertCount * 3);
 	float* verts((float*)dtAlloc(vertSize, DT_ALLOC_TEMP));
 	if (!verts)
 		return false;
@@ -966,17 +966,11 @@ bool dtNavMesh::getBorders(float*& vertices, int& vertCount, int*& borders, int&
 		dtMeshExtra* extra(&m_extras[i]);
 		if (!extra->header)
 			continue;
-                if (nsplit == totalBorderCount)
-                    break;
 
 		for (int j(0), k(0); j < extra->header->borderCount; ++j)
 		{
-                if (nsplit == totalBorderCount)
-                    break;
 			for (; k < extra->splits[j]; ++k)
-			{                if (nsplit == totalBorderCount)
-                    break;
-
+			{                
                 const unsigned char nei(extra->neis[k]);
                 if (!(nei & 0x80) && (nei & 0x0f) != 0x0f)
                     continue;
@@ -993,7 +987,7 @@ bool dtNavMesh::getBorders(float*& vertices, int& vertCount, int*& borders, int&
 				}
                 
                 if (nsplit == totalBorderCount)
-                    break;
+                    return false;
 				splits[nsplit++] = nvert;
 			}
 		}
