@@ -596,12 +596,12 @@ static bool walkBorder(dtTileCacheLayer& layer, unsigned char* flag, int x, int 
 			case 2: dx = 1; break;
 			}
             int tidx(x + y * w);
-			v = &cont.verts[cont.nverts++ * 5];
+			v = &cont.verts[cont.nverts++ * 4];
 			v[0] = x + dx;
 			v[1] = layer.heights[tidx];
 			v[2] = y + dz;
 			v[3] = (rn == 0xff ? 0x0f : rn - 0xf8);
-            v[4] = dx | (dz << 1);
+            v[3] |= (dx << 4) | (dz << 5);
             flag[tidx] |= 0x01 << dir;
 			ndir = (dir + 1) & 0x3;
 		}
@@ -623,7 +623,7 @@ static bool walkBorder(dtTileCacheLayer& layer, unsigned char* flag, int x, int 
 	}
 
 	dtAssert(cont.nverts > 2);
-    unsigned char* pa = &cont.verts[(cont.nverts - 1) * 5];
+    unsigned char* pa = &cont.verts[(cont.nverts - 1) * 4];
     unsigned char* pb = &cont.verts[0];
     if (pa[0] == pb[0] && pa[2] == pb[2])
         --cont.nverts;
@@ -1025,7 +1025,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
         return DT_FAILURE | DT_OUT_OF_MEMORY;
     memset(conts, 0, sizeof(dtTileCacheContour) * ccont);
 
-	dtFixedArray<unsigned char> tempVerts(alloc, maxTempVerts * 5);
+	dtFixedArray<unsigned char> tempVerts(alloc, maxTempVerts * 4);
 	if (!tempVerts)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 
@@ -1066,8 +1066,8 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 				memset(cont.verts, 0, vertSize);
 				for (int p(temp.nverts - 1), i = 0; i < temp.nverts; p = i++)
 				{
-                    unsigned char* v(&temp.verts[p * 5]);
-                    unsigned char dx(v[4] & 0x01), dz(v[4] >> 1);
+                    unsigned char* v(&temp.verts[p * 4]);
+                    unsigned char dx((v[3] & 0x10) >> 4), dz(v[3] >> 5);
 					unsigned char treg(layer.regs[v[0] - dx + (v[2] - dz) * w]);
 					const dtTileCacheContour& lcont(lcset.conts[treg]);
 					bool shouldRemove(true);
@@ -1085,14 +1085,15 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
                     if (shouldRemove)
                         continue;
                     
-                    unsigned char* nv(&temp.verts[i * 5]);
-                    unsigned char link(v[3]);
-                    if (v[3] == 0x0f && nv[3] != 0x0f)
+                    unsigned char* nv(&temp.verts[i * 4]);
+                    unsigned char nei(v[3] & 0x0f), nnei(nv[3] & 0x0f);
+                    unsigned char link(nei);
+                    if (nei == 0x0f && nnei != 0x0f)
                     {
-                        link = 0x80 | nv[3];
+                        link = 0x80 | nnei;
                         ++linkCount;
                     }
-                    else if (v[3] != 0x0f && nv[3] == 0x0f)
+                    else if (nei != 0x0f && nnei == 0x0f)
                     {
                         link |= 0x40;
                     }
