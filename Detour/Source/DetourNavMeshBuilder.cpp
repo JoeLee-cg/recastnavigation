@@ -693,6 +693,9 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 	header->borderCount = extraParams->nborders;
 	header->vertCount = vertCount;
 	header->linkCount = extraParams->linkCount;
+    header->x = params->tileX;
+    header->y = params->tileY;
+    header->layer = params->tileLayer;
 
 	for (int i(0); i < vertCount; ++i)
 	{

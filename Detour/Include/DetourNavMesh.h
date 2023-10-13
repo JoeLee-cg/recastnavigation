@@ -277,6 +277,9 @@ struct dtMeshHeader
 };
 struct dtMeshExtraHeader
 {
+    int x;
+    int y;
+    int layer;
 	int borderCount;
 	int vertCount;
 	int linkCount;

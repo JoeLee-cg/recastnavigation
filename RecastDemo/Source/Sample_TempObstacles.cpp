@@ -546,69 +546,71 @@ void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh)
 		if (!extra)
 			continue;
 
+        if (extra->header->x != 5 || extra->header->y != 1)
+            continue;
 		for (int i(0); i < extra->header->vertCount; ++i)
 		{
 			float fx = extra->vertices[i * 3 + 0];
 			float fy = extra->vertices[i * 3 + 1];
 			float fz = extra->vertices[i * 3 + 2];
 			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
-			dd->vertex(fx, fy, fz, rcolor);
+			dd->vertex(fx, fy, fz, i == 0 ? gcolor : i == 1 ? bcolor : rcolor);
 		}
 	}
 	dd->end();
 
-	dd->begin(DU_DRAW_POINTS, 10.0f);
-	for (int i(0); i < ntiles; ++i)
-	{
-		dtMeshExtra* extra(mesh->getExtraByIndex(i));
-		if (!extra)
-			continue;
+//	dd->begin(DU_DRAW_POINTS, 10.0f);
+//	for (int i(0); i < ntiles; ++i)
+//	{
+//		dtMeshExtra* extra(mesh->getExtraByIndex(i));
+//		if (!extra)
+//			continue;
+//
+//		for (int i(0); i < extra->header->vertCount; ++i)
+//		{
+//			unsigned char flag(extra->neis[i] >> 8);
+//			if (!(flag & 0x04))
+//				continue;
+//
+//			if (extra->linkIndices[i] == DT_NULL_LINK)
+//				continue;
+//			dtAssert(extra->linkIndices[i] != DT_NULL_LINK);
+//			if (extra->links[extra->linkIndices[i]].borderId == 0)
+//				continue;
+//
+//			float fx = extra->vertices[i * 3 + 0];
+//			float fy = extra->vertices[i * 3 + 1];
+//			float fz = extra->vertices[i * 3 + 2];
+//			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+//			dd->vertex(fx, fy, fz, gcolor);
+//		}
+//	}
+//	dd->end();
 
-		for (int i(0); i < extra->header->vertCount; ++i)
-		{
-			unsigned char flag(extra->neis[i] >> 8);
-			if (!(flag & 0x04))
-				continue;
-
-			if (extra->linkIndices[i] == DT_NULL_LINK)
-				continue;
-			dtAssert(extra->linkIndices[i] != DT_NULL_LINK);
-			if (extra->links[extra->linkIndices[i]].borderId == 0)
-				continue;
-
-			float fx = extra->vertices[i * 3 + 0];
-			float fy = extra->vertices[i * 3 + 1];
-			float fz = extra->vertices[i * 3 + 2];
-			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
-			dd->vertex(fx, fy, fz, gcolor);
-		}
-	}
-	dd->end();
-
-	dd->begin(DU_DRAW_LINES, 2.0f);
-	for (int i(0); i < ntiles; ++i)
-	{
-		dtMeshExtra* extra(mesh->getExtraByIndex(i));
-		if (!extra)
-			continue;
-		for (int j(0), k(0); j < extra->header->borderCount; ++j)
-		{
-			for (int p(extra->splits[j] - 1); k < extra->splits[j]; p = k++)
-			{
-				float pfx = extra->vertices[p * 3 + 0];
-				float pfy = extra->vertices[p * 3 + 1];
-				float pfz = extra->vertices[p * 3 + 2];
-				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", pfx, pfy, pfz);
-				dd->vertex(pfx, pfy, pfz, bcolor);
-				float fx = extra->vertices[k * 3 + 0];
-				float fy = extra->vertices[k * 3 + 1];
-				float fz = extra->vertices[k * 3 + 2];
-				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
-				dd->vertex(fx, fy, fz, bcolor);
-			}
-		}
-	}
-	dd->end();
+//	dd->begin(DU_DRAW_LINES, 2.0f);
+//	for (int i(0); i < ntiles; ++i)
+//	{
+//		dtMeshExtra* extra(mesh->getExtraByIndex(i));
+//		if (!extra)
+//			continue;
+//		for (int j(0), k(0); j < extra->header->borderCount; ++j)
+//		{
+//			for (int p(extra->splits[j] - 1); k < extra->splits[j]; p = k++)
+//			{
+//				float pfx = extra->vertices[p * 3 + 0];
+//				float pfy = extra->vertices[p * 3 + 1];
+//				float pfz = extra->vertices[p * 3 + 2];
+//				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", pfx, pfy, pfz);
+//				dd->vertex(pfx, pfy, pfz, bcolor);
+//				float fx = extra->vertices[k * 3 + 0];
+//				float fy = extra->vertices[k * 3 + 1];
+//				float fz = extra->vertices[k * 3 + 2];
+//				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+//				dd->vertex(fx, fy, fz, bcolor);
+//			}
+//		}
+//	}
+//	dd->end();
 }
 
 
