@@ -723,7 +723,7 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	bc.tbset = dtAllocTileCacheBorderSet(m_talloc);
 	if (!bc.tbset)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
-	status = dtBuildTileCacheBorders(m_talloc, *bc.layer, walkableClimbVx, *bc.lcset, *bc.tbset);
+	status = dtBuildTileCacheBorders(m_talloc, *bc.layer, *bc.lcset, *bc.tbset);
 	
 	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
 	if (!bc.lmesh)

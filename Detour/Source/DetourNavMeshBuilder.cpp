@@ -676,7 +676,7 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 	const int linkSize(dtAlign4(sizeof(dtBorderLink) * extraParams->linkCount));
 
 	const int dataSize(headerSize + vertSize + borderSize + nieSize + linkIndexSize + linkSize);
-	unsigned char* data = (unsigned char*)dtAlloc(sizeof(unsigned char) * dataSize, DT_ALLOC_PERM);
+	unsigned char* data = (unsigned char*)dtAlloc(dataSize, DT_ALLOC_PERM);
 	if (!data)
 	{
 		return false;
@@ -688,8 +688,6 @@ bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreat
 	float* vertices((float*)d); d += vertSize;
 	int* borderSplits((int*)d); d += borderSize;
 	unsigned short* neis((unsigned short*)d); d += nieSize;
-	unsigned int* linkIndices((unsigned int*)d); d += linkIndexSize;
-
 	header->borderCount = extraParams->nborders;
 	header->vertCount = vertCount;
 	header->linkCount = extraParams->linkCount;

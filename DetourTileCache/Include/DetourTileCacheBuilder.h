@@ -154,7 +154,6 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheContourSet& lcset);
 dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
-								  const int walkableClimb,
                                   const dtTileCacheContourSet& lcset,
 								  dtTileCacheBorderSet& tbset);
 
