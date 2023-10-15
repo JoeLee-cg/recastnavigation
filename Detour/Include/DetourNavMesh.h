@@ -718,20 +718,36 @@ private:
 public:
 	dtPolyRef getExtraRef(const dtMeshExtra* extra) const;
 	dtPolyRef getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const;
-	bool findBorderPortalVert(const float* vert, unsigned char& dir, dtMeshExtra* extra,
-								const int& start, bool bStart,
-								dtPolyRef& nborder, int& nvert);
-	bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
-								const float* vert, unsigned char& dir, bool bStart, dtPolyRef& nborder, int& nvert);
+	bool findBorderPortalVert(const float* vert, dtMeshExtra* extra,
+								const int& start, unsigned char flag,
+								dtPolyRef& nborder, int& nvert) const;
+	bool findBorderPortalVert(const int& tileX, const int& tileY,
+								const float* vert, unsigned char flag, dtPolyRef& nborder, int& nvert) const;
+    bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
+                                const float* vert, unsigned char flag, dtPolyRef& nborder, int& nvert) const;
 
 	dtMeshTile* getTileByIndex(const int& i);
 	dtMeshExtra* getExtraByIndex(const int& i);
 	dtMeshExtra* getExtra(const dtPolyRef& ref);
 	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
 private:
-	bool walkBorder(const int& extraIdx, const int& borderIdx,const int&vertIdx,
-								const int& maxVertPerExtra, unsigned char* flags,
-								float* verts, int& vertCount) const;
+    inline int getDirOffsetX(char dir) const
+    {
+        const char offset[4] = { -1, 0, 1, 0, };
+        return offset[dir & 0x03];
+    }
+    inline char getDirOffsetY(char dir) const
+    {
+        const char offset[4] = { 0, 1, 0, -1 };
+        return offset[dir & 0x03];
+    }
+	bool walkBorder(const int& extraIdx, const int& borderIdx, const int& vertIdx,
+                    const int& maxVertPerExtra, unsigned char* flags,
+                    float* verts, int& vertCount) const;
+    bool walkMissing(int& iextra, int& iborder, int& ivert,
+                     const int& maxVertPerExtra, unsigned char* flags,
+                     float* verts, int& vertCount) const;
+    void getTileOffset(const int& side, int& dx, int& dy) const;
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

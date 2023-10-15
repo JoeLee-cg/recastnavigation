@@ -1071,7 +1071,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 					unsigned char treg(layer.regs[v[0] - dx + (v[2] - dz) * w]);
 					const dtTileCacheContour& lcont(lcset.conts[treg]);
 					bool shouldRemove(true);
-                    unsigned char lh(0);
+                    unsigned char lh(v[1]);
                     for (int j(0); j < lcont.nverts; ++j)
                     {
                         unsigned char* lv(&lcont.verts[j * 4]);
