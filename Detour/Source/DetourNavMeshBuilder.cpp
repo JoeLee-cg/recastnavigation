@@ -657,57 +657,122 @@ bool dtCreateNavMeshData(dtNavMeshCreateParams* params, unsigned char** outData,
 	return true;
 }
 
-bool dtCreateNavMeshExtraData(dtNavMeshCreateParams* params, dtNavMeshExtraCreateParams* extraParams, unsigned char** outData, int* outDataSize)
+bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned char* navData,
+                              unsigned char** outData, int* outDataSize)
 {
-	if (!extraParams->nborders || !extraParams->splits)
+	if (!params->nborders || !params->splits)
 		return false;
-	if (!extraParams->vertices)
+	if (!params->vertices)
 		return false;
 
-	const int vertCount(extraParams->splits[extraParams->nborders - 1]);
+	const int vertCount(params->splits[params->nborders - 1]);
 	if (vertCount <= 0)
 		return false;
-
+    
+    const dtMeshHeader* meshHeader((const dtMeshHeader*)navData);
+    const int meshHeaderSize(dtAlign4(sizeof(dtMeshHeader)));
+    const int meshVertsSize(dtAlign4(sizeof(float) * 3 * meshHeader->vertCount));
+    const int meshPolysSize(dtAlign4(sizeof(dtPoly) * meshHeader->polyCount));
+    
+    const unsigned char* nd = navData + meshHeaderSize;
+    const float* meshVerts(dtGetThenAdvanceBufferPointer<const float>(nd, meshVertsSize));
+    const dtPoly* meshPolys(dtGetThenAdvanceBufferPointer<const dtPoly>(nd, meshPolysSize));
+    
 	const int headerSize(dtAlign4(sizeof(dtMeshExtraHeader)));
 	const int vertSize(dtAlign4(sizeof(float) * 3 * vertCount));
-	const int borderSize(dtAlign4(sizeof(int) * extraParams->nborders));
+	const int borderSize(dtAlign4(sizeof(int) * params->nborders));
 	const int nieSize(dtAlign4(sizeof(unsigned short) * vertCount));
 	const int linkIndexSize(dtAlign4(sizeof(unsigned int) * vertCount));
-	const int linkSize(dtAlign4(sizeof(dtBorderLink) * extraParams->linkCount));
+	const int linkSize(dtAlign4(sizeof(dtBorderLink) * params->linkCount));
+    const int polyMapSize(dtAlign4(sizeof(dtBorderPoly) * (params->linkCount << 1)));
 
-	const int dataSize(headerSize + vertSize + borderSize + nieSize + linkIndexSize + linkSize);
-	unsigned char* data = (unsigned char*)dtAlloc(dataSize, DT_ALLOC_PERM);
+	const int dataSize(headerSize + vertSize + borderSize + nieSize + linkIndexSize + linkSize + polyMapSize);
+	unsigned char* data((unsigned char*)dtAlloc(dataSize, DT_ALLOC_PERM));
 	if (!data)
-	{
 		return false;
-	}
+    
 	memset(data, 0, dataSize);
 	
-	unsigned char* d = data;
+	unsigned char* d(data);
 	dtMeshExtraHeader* header((dtMeshExtraHeader*)d); d += headerSize;
 	float* vertices((float*)d); d += vertSize;
 	int* borderSplits((int*)d); d += borderSize;
 	unsigned short* neis((unsigned short*)d); d += nieSize;
-	header->borderCount = extraParams->nborders;
+    unsigned int* linkIndices((unsigned int*)d); d += linkIndexSize;
+    dtBorderLink* links((dtBorderLink*)d); d += linkSize;
+    dtBorderPoly* polyMap((dtBorderPoly*)d); d += polyMapSize;
+    
+	header->borderCount = params->nborders;
 	header->vertCount = vertCount;
-	header->linkCount = extraParams->linkCount;
-    header->x = params->tileX;
-    header->y = params->tileY;
-    header->layer = params->tileLayer;
+	header->linkCount = params->linkCount;
+    header->x = meshHeader->x;
+    header->y = meshHeader->y;
+    header->layer = meshHeader->layer;
+	header->walkableClimb = header->walkableClimb;
 
+    int polyCount(0);
 	for (int i(0); i < vertCount; ++i)
 	{
-		const unsigned short* iv = &extraParams->vertices[i * 4];
-		float* v = &vertices[i * 3];
+		const unsigned short* iv(&params->vertices[i * 4]);
+		float* v(&vertices[i * 3]);
 		v[0] = params->bmin[0] + iv[0] * params->cs;
 		v[1] = params->bmin[1] + iv[1] * params->ch;
 		v[2] = params->bmin[2] + iv[2] * params->cs;
 
 		neis[i] = iv[3];
+        
+        if (!(neis[i] & 0x80) && !(neis[i] & 0x40))
+            continue;
+        
+        dtBorderPoly* borderPoly(&polyMap[polyCount++]);
+        borderPoly->borderVert = i;
+        borderPoly->polyIdx = -1;
+        borderPoly->vertIdx = 0;
+        const unsigned short dir(neis[i] & 0x0f);
+        for (int j(0); j < meshHeader->polyCount; ++j)
+        {
+            const dtPoly* poly(&meshPolys[j]);
+            for (unsigned char ppvi(poly->vertCount - 1), pvi(0); pvi < poly->vertCount; ppvi = pvi++)
+            {
+                unsigned short nei(poly->neis[neis[i] & 0x40 ? ppvi : pvi]);
+                if (!(nei & DT_EXT_LINK))
+                    continue;
+                
+                unsigned short ndir(0x0f);
+                switch (nei & ~DT_EXT_LINK) {
+                    case 4:
+                        ndir = 0;
+                        break;
+                    case 2:
+                        ndir = 1;
+                        break;
+                    case 0:
+                        ndir = 2;
+                        break;
+                    case 6:
+                        ndir = 3;
+                        break;
+                    default:
+                        break;
+                }
+                if (ndir != dir)
+                    continue;
+                
+                const float* pv(&meshVerts[poly->verts[pvi] * 3]);
+                if (dtAbs(v[0] - pv[0]) > 0.01f || dtAbs(v[2] - pv[2]) > 0.01f)
+                    continue;
+                
+                borderPoly->polyIdx = j;
+                borderPoly->vertIdx = pvi;
+                break;
+            }
+            if (borderPoly->polyIdx != -1)
+                break;
+        }
 	}
-	for (int i(0); i < extraParams->nborders; ++i)
+	for (int i(0); i < params->nborders; ++i)
 	{
-		borderSplits[i] = extraParams->splits[i];
+		borderSplits[i] = params->splits[i];
 	}
 
 	*outData = data;

@@ -275,15 +275,6 @@ struct dtMeshHeader
 	/// The bounding volume quantization factor. 
 	float bvQuantFactor;
 };
-struct dtMeshExtraHeader
-{
-    int x;
-    int y;
-    int layer;
-	int borderCount;
-	int vertCount;
-	int linkCount;
-};
 
 /// Defines a navigation mesh tile.
 /// @ingroup detour
@@ -320,11 +311,27 @@ private:
 	dtMeshTile& operator=(const dtMeshTile&);
 };
 
+struct dtMeshExtraHeader
+{
+    int x;
+    int y;
+    int layer;
+    int borderCount;
+    int vertCount;
+    int linkCount;
+    float walkableClimb;
+};
 struct dtBorderLink
 {
 	dtPolyRef borderId;
 	int vertIndex;
 	unsigned int next;
+};
+struct dtBorderPoly
+{
+    int borderVert;
+    int polyIdx;
+    unsigned char vertIdx;
 };
 struct dtMeshExtra
 {
@@ -332,6 +339,7 @@ struct dtMeshExtra
 
 	unsigned int linksFreeList;
 	dtBorderLink* links;
+    dtBorderPoly* polys;
 
 	dtMeshExtraHeader* header;
 	unsigned char* data;
@@ -725,12 +733,27 @@ public:
 								const float* vert, unsigned char flag, dtPolyRef& nborder, int& nvert) const;
     bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
                                 const float* vert, unsigned char flag, dtPolyRef& nborder, int& nvert) const;
+    
+    bool findBorderPortalVert(const int& iextra, const int& ivert,
+                              dtPolyRef& nborder, int& nvert) const;
+    bool findBorderPortalVert(const int& tileX, const int& tileY,
+                              const int& iextra, const int& ivert,
+                              dtPolyRef& nborder, int& nvert) const;
+    bool findNeibBorderPortalVert(const int& iextra, const int& ivert,
+                                  dtPolyRef& nborder, int& nvert) const;
+    
+    bool getBorderPoly(const dtMeshExtra* extra, const int& borderVert, int& outPolyIdx, unsigned char& outVertIdx) const;
 
 	dtMeshTile* getTileByIndex(const int& i);
 	dtMeshExtra* getExtraByIndex(const int& i);
 	dtMeshExtra* getExtra(const dtPolyRef& ref);
 	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
+    inline bool isBorderLinkValid(const unsigned int& idx) const
+    {
+        return idx != DT_BORDER_IN_LINK && idx != DT_NULL_LINK;
+    }
 private:
+	static const unsigned int DT_BORDER_IN_LINK = 0xfffffffe;
     inline int getDirOffsetX(char dir) const
     {
         const char offset[4] = { -1, 0, 1, 0, };
@@ -748,6 +771,13 @@ private:
                      const int& maxVertPerExtra, unsigned char* flags,
                      float* verts, int& vertCount) const;
     void getTileOffset(const int& side, int& dx, int& dy) const;
+	dtStatus AddExtra(const dtMeshTile* tile, unsigned char* extraData, int extraDataSize);
+	dtStatus RemoveExtra(const unsigned char& tileIndex, unsigned char** extraData, int* extraDataSize);
+	int getTileCountAt(const int x, const int y) const;
+    bool getBorderPolyInTile(const int& iextra, const float* lv, int& outPolyIdx, unsigned char& outVertIdx) const;
+    const dtLink* getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const unsigned char& vertIdx) const;
+    bool getBorderVert(const dtMeshTile* tile, const dtMeshExtra* extra, const int& polyIdx, const dtPolyRef& tRef,
+                                    const unsigned short& nei, int& outBorderVert) const;
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

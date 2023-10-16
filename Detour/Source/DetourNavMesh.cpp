@@ -134,21 +134,6 @@ inline void freeLink(dtMeshTile* tile, unsigned int link)
 	tile->linksFreeList = link;
 }
 
-inline unsigned int allocBorderLink(dtMeshExtra* extra)
-{
-	if (extra->linksFreeList == DT_NULL_LINK)
-		return DT_NULL_LINK;
-	unsigned int link = extra->linksFreeList;
-	extra->linksFreeList = extra->links[link].next;
-	return link;
-}
-
-inline void freeBorderLink(dtMeshExtra* extra, unsigned int link)
-{
-	extra->links[link].next = extra->linksFreeList;
-	extra->linksFreeList = link;
-}
-
 dtNavMesh* dtAllocNavMesh()
 {
 	void* mem = dtAlloc(sizeof(dtNavMesh), DT_ALLOC_PERM);
@@ -778,341 +763,6 @@ void dtNavMesh::closestPointOnPoly(dtPolyRef ref, const float* pos, float* close
 	closestPointOnDetailEdges<true>(tile, poly, pos, closest);
 }
 
-dtPolyRef dtNavMesh::getExtraRef(const dtMeshExtra* extra) const
-{
-	if (!extra) return 0;
-	const unsigned int it = (unsigned int)(extra - m_extras);
-	return encodePolyId(extra->salt, it, 0);
-}
-
-dtPolyRef dtNavMesh::getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const
-{
-	if (!extra) return 0;
-	const unsigned int it = (unsigned int)(extra - m_extras);
-	return encodePolyId(extra->salt, it, ib);
-}
-
-bool dtNavMesh::findBorderPortalVert(const float* vert, dtMeshExtra* extra,
-									const int& start, unsigned char flag,
-									dtPolyRef& nborder, int& nvert) const
-{
-	for (int j(start), k(start == 0 ? 0 : extra->splits[start - 1]); j < extra->header->borderCount; ++j)
-	{
-		for (; k < extra->splits[j]; k++)
-		{
-			unsigned short nei(extra->neis[k]);
-			if (flag != 0xff && !(nei & flag))
-				continue;
-
-            dtMeshTile* tile(&m_tiles[extra - m_extras]);
-			const float* evert(&extra->vertices[k * 3]);
-			if (dtAbs(evert[0] - vert[0]) < 0.001f
-				&& dtAbs(evert[1] - vert[1]) < (tile->header->walkableClimb)
-				&& dtAbs(evert[2] - vert[2]) < 0.001f)
-			{
-				nborder = getBorderRef(extra, j);
-				nvert = k;
-				return true;
-			}
-		}
-	}
-	return false;
-}
-
-bool dtNavMesh::findBorderPortalVert(const int& tileX, const int& tileY,
-                                        const float* vert, unsigned char flag,
-                                        dtPolyRef& nborder, int& nvert) const
-{
-    static const int MAX_NEIS = 32;
-    dtMeshTile* neis[MAX_NEIS];
-    int nneis(getTilesAt(tileX, tileY, neis, MAX_NEIS));
-    for (int j = 0; j < nneis; ++j)
-    {
-        dtTileRef ntileRef(getTileRef(neis[j]));
-        const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
-        dtMeshExtra* nextra(&m_extras[ntileIndex]);
-        if (!nextra->header)
-            continue;
-        if (findBorderPortalVert(vert, nextra, 0, flag, nborder, nvert))
-            return true;
-    }
-    return false;
-}
-
-bool dtNavMesh::findNeibBorderPortalVert(const int& tileX, const int& tileY,
-										const float* vert, unsigned char flag,
-										dtPolyRef& nborder, int& nvert) const
-{
-    int dx(0), dy(0);
-	for (int i = 0; i < 8; ++i)
-    {
-        getTileOffset(i, dx, dy);
-        if (findBorderPortalVert(tileX + dx, tileY + dy, vert, flag, nborder, nvert))
-        return true;
-    }
-    
-	return false;
-}
-
-dtMeshTile* dtNavMesh::getTileByIndex(const int& i)
-{
-	if (i >= 0 && i < getMaxTiles())
-	{
-		dtMeshTile* tile(&m_tiles[i]);
-		if (tile && tile->header)
-			return tile;
-	}
-	return nullptr;
-}
-
-dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i)
-{
-	if (i >= 0 && i < getMaxTiles())
-	{
-		dtMeshExtra* extra(&m_extras[i]);
-		if (extra && extra->header)
-			return extra;
-	}
-	return nullptr;
-}
-
-dtMeshExtra* dtNavMesh::getExtra(const dtPolyRef& ref)
-{
-	return getExtraByIndex(decodePolyIdTile(ref));
-}
-
-bool dtNavMesh::walkBorder(const int& extraIdx, const int& borderIdx,const int&vertIdx,
-							const int& maxVertPerExtra, unsigned char* flags,
-							float* verts, int& vertCount) const
-{
-	int iter(0), iextra(extraIdx), iborder(borderIdx), ivert(vertIdx);
-	while (iter < extraVertCount)
-	{
-        ++iter;
-		if (vertCount == extraVertCount)
-			return true;
-        int iflag(maxVertPerExtra * iextra + ivert);
-        if (flags[iflag] == 0x01)
-            break;
-
-		dtMeshExtra* extra(&m_extras[iextra]);
-		const float* v(&extra->vertices[ivert * 3]);
-		float* tv(&verts[vertCount++ * 3]);
-		tv[0] = v[0];
-		tv[1] = v[1];
-		tv[2] = v[2];
-
-		flags[iflag] = 0x01;
-		unsigned int lidx(extra->linkIndices[ivert]);
-        if (lidx == DT_NULL_LINK)
-        {
-            int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
-                eidx(extra->splits[iborder]);
-
-            ivert = ivert == eidx - 1 ? sidx : ivert + 1; 
-        }
-        else if (extra->links[lidx].borderId == 0)
-        {
-            if (!walkMissing(iextra, iborder, ivert, maxVertPerExtra, flags, verts, vertCount))
-                return false;
-            
-            dtMeshExtra* nextra(&m_extras[iextra]);
-            int sidx(iborder == 0 ? 0 : nextra->splits[iborder - 1]),
-                eidx(nextra->splits[iborder]);
-            ivert = ivert == eidx - 1 ? sidx : ivert + 1;
-        }
-        else
-		{
-			dtBorderLink* link(&extra->links[lidx]);
-			int linkExtraIdx(decodePolyIdTile(link->borderId));
-			dtAssert(linkExtraIdx < getMaxTiles());
-			dtMeshExtra* linkExtra(&m_extras[linkExtraIdx]);
-			dtAssert(linkExtra->header);
-
-			flags[maxVertPerExtra * linkExtraIdx + link->vertIndex] = 0x01;
-
-			int linkBorderIdx(decodePolyIdPoly(link->borderId));
-			int sidx(linkBorderIdx == 0 ? 0 : linkExtra->splits[linkBorderIdx - 1]),
-				eidx(linkExtra->splits[linkBorderIdx]);
-
-			iextra = linkExtraIdx;
-			iborder = linkBorderIdx;
-			ivert = link->vertIndex == eidx - 1 ? sidx : link->vertIndex + 1;
-		}
-        
-		if (iextra == extraIdx && iborder == borderIdx && ivert == vertIdx)
-			break;
-	}
-
-	return true;
-}
-
-void dtNavMesh::getTileOffset(const int& side, int& dx, int& dy) const
-{
-    dx = 0;
-    dy = 0;
-    switch (side)
-    {
-        case 0: dx++; break;
-        case 1: dx++; dy++; break;
-        case 2: dy++; break;
-        case 3: dx--; dy++; break;
-        case 4: dx--; break;
-        case 5: dx--; dy--; break;
-        case 6: dy--; break;
-        case 7: dx++; dy--; break;
-    };
-}
-
-bool dtNavMesh::walkMissing(int& iextra, int& iborder, int& ivert,
-                            const int& maxVertPerExtra, unsigned char* flags,
-                            float* verts, int& vertCount) const
-{
-    int iter(0);
-    dtMeshExtra* extra(&m_extras[iextra]);
-    unsigned char dir(extra->neis[ivert] & 0x0f);
-    dtAssert(dir != 0x0f);
-    
-    while (iter < maxVertPerExtra)
-    {
-        ++iter;
-        if (vertCount == maxVertPerExtra)
-            return true;
-        
-        extra = &m_extras[iextra];
-        int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
-            eidx(extra->splits[iborder]);
-        ivert = ivert == eidx - 1 ? sidx : ivert + 1;
-        int iflag(maxVertPerExtra * iextra + ivert);
-        if (flags[iflag] == 0x01)
-            return true;
-        
-        const float* v(&extra->vertices[ivert * 3]);
-        float* tv(&verts[vertCount++ * 3]);
-        tv[0] = v[0];
-        tv[1] = v[1];
-        tv[2] = v[2];
-        flags[iflag] = 0x01;
-        if (extra->neis[ivert] & 0x40)
-            return true;
-        
-        unsigned char ndir(dir);
-        dtPolyRef nborder(0);
-        int tx(extra->header->x), ty(extra->header->y), nvert(0);
-        for (unsigned char i(0); i < 3; ++i)
-        {
-            ndir = (dir + i) & 0x03;
-            tx += getDirOffsetX(ndir);
-            ty += getDirOffsetY(ndir);
-            if (i > 0 && findBorderPortalVert(tx, ty, v, 0xff, nborder, nvert))
-            {
-                iextra = decodePolyIdTile(nborder);
-                iborder = decodePolyIdPoly(nborder);
-                ivert = nvert;
-                dir = (ndir + 2) & 0x03;
-                break;
-            }
-        }
-    }
-    
-    return true;
-}
-
-bool dtNavMesh::getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const
-{
-	int maxVertPerExtra(0), totalBorderCount(0);
-	for (int i(0); i < getMaxTiles(); ++i)
-	{
-		if (m_extras[i].header)
-		{
-			maxVertPerExtra = dtMax(maxVertPerExtra, m_extras[i].header->vertCount);
-			totalBorderCount += m_extras[i].header->borderCount;
-		}
-	}
-	if (maxVertPerExtra == 0)
-		return false;
-
-	int maxVertCount(maxVertPerExtra * getMaxTiles());
-	int flagSize(sizeof(unsigned char) *  maxVertCount);
-	unsigned char* flags((unsigned char*)dtAlloc(flagSize, DT_ALLOC_TEMP));
-	if (!flags)
-		return false;
-	memset(flags, 0, flagSize);
-
-	int vertSize(sizeof(float) * extraVertCount * 3);
-	float* verts((float*)dtAlloc(vertSize, DT_ALLOC_TEMP));
-	if (!verts)
-		return false;
-	memset(verts, 0, vertSize);
-
-	int splitSize(sizeof(int) * totalBorderCount);
-	int* splits((int*)dtAlloc(splitSize, DT_ALLOC_TEMP));
-	if (!splits)
-		return false;
-	memset(splits, 0, splitSize);
-
-	int nvert(0), nsplit(0);
-	for (int i(0); i < getMaxTiles(); ++i)
-	{
-		dtMeshExtra* extra(&m_extras[i]);
-		if (!extra->header)
-			continue;
-
-		for (int j(0), k(0); j < extra->header->borderCount; ++j)
-		{
-			for (; k < extra->splits[j]; ++k)
-			{                
-                const unsigned char nei(extra->neis[k]);
-                if (!(nei & 0x80) && (nei & 0x0f) != 0x0f)
-                    continue;
-                
-				if (flags[i * maxVertPerExtra + k] == 0x01)
-					continue;
-
-				if (!walkBorder(i, j, k, maxVertPerExtra, flags, verts, nvert))
-				{
-					dtFree(flags);
-					dtFree(verts);
-					dtFree(splits);
-					return false;
-				}
-                
-                if (nsplit == totalBorderCount)
-                    return false;;
-				splits[nsplit++] = nvert;
-			}
-		}
-	}
-	dtFree(flags);
-
-	vertCount = 0;
-	borderCount = 0;
-	if (nvert > 0 && nsplit > 0)
-	{
-		vertices = (float*)dtAlloc(sizeof(float) * 3 * nvert, DT_ALLOC_TEMP);
-		borders = (int*)dtAlloc(sizeof(int) * nsplit, DT_ALLOC_TEMP);
-		if (vertices && borders)
-		{
-			for (int i(0), j(0); i < nsplit; ++i)
-			{
-				for (; j < splits[i]; ++j)
-				{
-					const float* v(&verts[j * 3]);
-					float* tv(&vertices[vertCount++ * 3]);
-					tv[0] = v[0];
-					tv[1] = v[1];
-					tv[2] = v[2];
-				}
-				borders[borderCount++] = vertCount;
-			}
-		}
-	}
-
-	dtFree(verts);
-	dtFree(splits);
-	return vertCount > 0;
-}
-
 dtPolyRef dtNavMesh::findNearestPolyInTile(const dtMeshTile* tile,
 										   const float* center, const float* halfExtents,
 										   float* nearestPt) const
@@ -1407,131 +1057,8 @@ dtStatus dtNavMesh::addTile(unsigned char* data, int dataSize, int flags,
 	
 	if (result)
 		*result = getTileRef(tile);
-
-	dtTileRef tileRef(getTileRef(tile));
-	const int tileIndex(decodePolyIdTile((dtPolyRef)tileRef));
-	dtMeshExtra* extra(&m_extras[tileIndex]);
-	memset(extra, 0, sizeof(dtMeshExtra));
-	if (extraData)
-	{
-		dtMeshExtraHeader* extraHeader((dtMeshExtraHeader*)extraData);
-		const int extraHeaderSize(dtAlign4(sizeof(dtMeshExtraHeader)));
-		const int vertSize(dtAlign4(sizeof(float) * 3 * extraHeader->vertCount));
-		const int borderSizer(dtAlign4(sizeof(int) * extraHeader->borderCount));
-		const int neiSize(dtAlign4(sizeof(unsigned short) * extraHeader->vertCount));
-		const int linkIndexSize(dtAlign4(sizeof(unsigned int) * extraHeader->vertCount));
-		const int borderLinkSize(dtAlign4(sizeof(dtBorderLink) * extraHeader->linkCount));
-
-		extraVertCount += extraHeader->vertCount;
-
-		extra->header = extraHeader;
-		extra->data = extraData;
-		extra->dataSize = extraDataSize;
-		extra->salt =  tile->salt;
-		extra->linksFreeList = 0;
-
-		unsigned char* d(extraData + extraHeaderSize);
-		extra->vertices = (float*)d; d += vertSize;
-		extra->splits = (int*)d; d += borderSizer;
-		extra->neis = (unsigned short*)d; d += neiSize;
-		extra->linkIndices = (unsigned int*)d; d += linkIndexSize;
-		extra->links = (dtBorderLink*)d; d += borderLinkSize;
-
-		memset(extra->linkIndices, DT_NULL_LINK, linkIndexSize);
-		extra->linksFreeList = 0;
-		extra->links[extraHeader->linkCount - 1].next = DT_NULL_LINK;
-		for (int i = 0; i < extraHeader->linkCount -1; ++i)
-			extra->links[i].next = i + 1;
-
-		if (extraHeader->linkCount > 0)
-		{
-			for (int i(0), ii(0); i < extraHeader->borderCount; ++i)
-			{
-				for (; ii < extra->splits[i]; ++ii)
-				{
-					unsigned short nei(extra->neis[ii]);
-					if (!(nei & 0x80))
-						continue;
-
-					const float* vert(&extra->vertices[ii * 3]);
-					dtPolyRef nborder(0); 
-					int nvert(0);
-                    int nextras(getTilesAt(header->x, header->y, neis, MAX_NEIS));
-                    for (int j = 0; j < nextras; ++j)
-                    {
-                        dtTileRef ntileRef(getTileRef(neis[j]));
-                        const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
-                        dtMeshExtra* nextra(&m_extras[ntileIndex]);
-                        if (nextra == extra || !nextra->header)
-                            continue;
-                        if (findBorderPortalVert(vert, nextra, 0, 0x40, nborder, nvert))
-                            break;
-                    }
-                    if (nborder == 0)
-                        findNeibBorderPortalVert(header->x, header->y, vert, 0x40, nborder, nvert);
-
-					unsigned int lindex(allocBorderLink(extra));
-					if (lindex == DT_NULL_LINK)
-						continue;
-
-					dtBorderLink* borderLink(&extra->links[lindex]);
-					borderLink->borderId = nborder;
-					borderLink->vertIndex = nvert;
-					extra->linkIndices[ii] = lindex;
-				}
-			}
-			for (int i(0), ii(0); i < extraHeader->borderCount; ++i)
-			{
-				for (; ii < extra->splits[i]; ii++)
-				{
-					unsigned short nei(extra->neis[ii]);
-					if (!(nei & 0x40))
-						continue;
-
-					const float* vert(&extra->vertices[ii * 3]);
-                    dtPolyRef nborder(0);
-                    int nvert(0);
-                    int nextras(getTilesAt(header->x, header->y, neis, MAX_NEIS));
-                    for (int j = 0; j < nextras; ++j)
-                    {
-                        dtTileRef ntileRef(getTileRef(neis[j]));
-                        const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
-                        dtMeshExtra* nextra(&m_extras[ntileIndex]);
-                        if (nextra == extra || !nextra->header)
-                            continue;
-                        if (findBorderPortalVert(vert, nextra, 0, 0x80, nborder, nvert))
-                            break;
-                    }
-                    if (nborder == 0)
-                        findNeibBorderPortalVert(header->x, header->y, vert, 0x80, nborder, nvert);
-                    
-                    if (nborder == 0)
-						continue;
-
-					dtMeshExtra *nextra(getExtra(nborder));
-					dtAssert(nextra);
-					unsigned int nlinkIdx(nextra->linkIndices[nvert]);
-					if (nlinkIdx == DT_NULL_LINK)
-						continue;
-
-					dtBorderLink* borderLink(&nextra->links[nlinkIdx]);
-					dtAssert(borderLink->borderId == 0);
-					//if (borderLink->borderId != 0)
-					//{
-					//	int ti = decodePolyIdTile(borderLink->borderId);
-					//	dtMeshExtra* textra = &m_extras[ti];
-					//	int pi = decodePolyIdPoly(borderLink->borderId);
-					//	nextra->neis[nlinkIdx] |= 0x0400;
-					//}
-
-					borderLink->borderId = getBorderRef(extra, i);
-					borderLink->vertIndex = ii;
-				}
-			}
-		}
-	}
 	
-	return DT_SUCCESS;
+	return AddExtra(tile, extraData, extraDataSize);
 }
 
 const dtMeshTile* dtNavMesh::getTileAt(const int x, const int y, const int layer) const
@@ -1810,21 +1337,7 @@ dtStatus dtNavMesh::removeTile(dtTileRef ref, unsigned char** data, int* dataSiz
 	tile->next = m_nextFree;
 	m_nextFree = tile;
 
-	dtMeshExtra* extra(&m_extras[tileIndex]);
-    if (extra->header)
-    {
-		extraVertCount -= extra->header->vertCount;
-		dtAssert(extraVertCount >= 0);
-
-		if (extraData)
-			*extraData = extra->data;
-		if (extraDataSize)
-			*extraDataSize = extra->dataSize;
-
-        memset(extra, 0, sizeof(dtMeshExtra));
-    }
-
-	return DT_SUCCESS;
+	return RemoveExtra(tileIndex, extraData, extraDataSize);
 }
 
 dtTileRef dtNavMesh::getTileRef(const dtMeshTile* tile) const
@@ -2084,3 +1597,818 @@ dtStatus dtNavMesh::getPolyArea(dtPolyRef ref, unsigned char* resultArea) const
 	return DT_SUCCESS;
 }
 
+
+//////////////////////////////////////////////////////////////////////////////////////////
+inline unsigned int allocBorderLink(dtMeshExtra* extra)
+{
+	if (extra->linksFreeList == DT_NULL_LINK)
+		return DT_NULL_LINK;
+	unsigned int link = extra->linksFreeList;
+	extra->linksFreeList = extra->links[link].next;
+	return link;
+}
+
+inline void freeBorderLink(dtMeshExtra* extra, unsigned int link)
+{
+	extra->links[link].next = extra->linksFreeList;
+	extra->linksFreeList = link;
+}
+
+dtPolyRef dtNavMesh::getExtraRef(const dtMeshExtra* extra) const
+{
+	if (!extra) return 0;
+	const unsigned int it = (unsigned int)(extra - m_extras);
+	return encodePolyId(extra->salt, it, 0);
+}
+
+dtPolyRef dtNavMesh::getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const
+{
+	if (!extra) return 0;
+	const unsigned int it = (unsigned int)(extra - m_extras);
+	return encodePolyId(extra->salt, it, ib);
+}
+
+bool dtNavMesh::findBorderPortalVert(const float* vert, dtMeshExtra* extra,
+									const int& start, unsigned char flag,
+									dtPolyRef& nborder, int& nvert) const
+{
+	for (int j(start), k(start == 0 ? 0 : extra->splits[start - 1]); j < extra->header->borderCount; ++j)
+	{
+		for (; k < extra->splits[j]; k++)
+		{
+			unsigned short nei(extra->neis[k]);
+			if (flag != 0xff && !(nei & flag))
+				continue;
+
+			const float* evert(&extra->vertices[k * 3]);
+			if (dtAbs(evert[0] - vert[0]) < 0.001f
+				&& dtAbs(evert[1] - vert[1]) < (extra->header->walkableClimb)
+				&& dtAbs(evert[2] - vert[2]) < 0.001f)
+			{
+				nborder = getBorderRef(extra, j);
+				nvert = k;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool dtNavMesh::findBorderPortalVert(const int& iextra, const int& ivert,
+                                     dtPolyRef& nborder, int& nvert) const
+{
+    const dtMeshTile* tile(&m_tiles[iextra]);
+    const dtMeshExtra* extra(&m_extras[iextra]);
+    int polyIdx(-1);
+    unsigned char vertIdx(0);
+    if (!getBorderPoly(extra, ivert, polyIdx, vertIdx))
+        return false;
+    
+    const dtPoly& poly(tile->polys[polyIdx]);
+    unsigned char lvert(vertIdx);
+    unsigned char nei(extra->neis[ivert] & 0xf0);
+    if (nei & 0x40)
+        lvert = lvert == 0 ? poly.vertCount - 1 : lvert - 1;
+    
+    const dtLink* link = getPolyLinkInTile(tile, poly, lvert);
+    if (!link)
+        return false;
+    
+    int npolyIdx(decodePolyIdPoly(link->ref));
+    int ntileIdx(decodePolyIdTile(link->ref));
+    const dtMeshExtra* nextra(&m_extras[ntileIdx]);
+    const dtMeshTile* ntile(&m_tiles[ntileIdx]);
+    const dtPolyRef polyRef(getPolyRefBase(tile) | polyIdx);
+    if (!getBorderVert(ntile, nextra, npolyIdx, polyRef, nei, nvert))
+        return false;
+        
+//    unsigned char nnei(nextra->neis[nvert] & 0xf0);
+//    if ((nei | nnei) != 0xc0)
+//        return false;;
+    
+    for (int ib(0), pb(0); ib < nextra->header->borderCount; pb = nextra->splits[ib++])
+    {
+        if (nvert < pb || nvert >= nextra->splits[ib])
+            continue;
+        
+        nborder = getBorderRef(nextra, ib);
+        return true;
+    }
+    return false;
+}
+bool dtNavMesh::findBorderPortalVert(const int& tileX, const int& tileY,
+                                     const int& iextra, const int& ivert,
+                                     dtPolyRef& nborder, int& nvert) const
+{
+    static const int MAX_NEIS = 32;
+    dtMeshTile* neis[MAX_NEIS];
+    int nneis(getTilesAt(tileX, tileY, neis, MAX_NEIS));
+    for (int j = 0; j < nneis; ++j)
+    {
+        dtTileRef ntileRef(getTileRef(neis[j]));
+        const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+        dtMeshExtra* nextra(&m_extras[ntileIndex]);
+        if (!nextra->header)
+            continue;
+        if (findBorderPortalVert(iextra, ivert, nborder, nvert))
+            return true;
+    }
+    return false;
+}
+bool dtNavMesh::findNeibBorderPortalVert(const int& iextra, const int& ivert,
+                                         dtPolyRef& nborder, int& nvert) const
+{
+    const dtMeshExtra* extra(&m_extras[iextra]);
+    int tileX(extra->header->x), tileY(extra->header->y), dx(0), dy(0);
+    for (int i = 0; i < 8; ++i)
+    {
+        getTileOffset(i, dx, dy);
+        if (findBorderPortalVert(tileX + dx, tileY + dy, iextra, ivert, nborder, nvert))
+            return true;
+    }
+
+    return false;
+}
+
+bool dtNavMesh::findBorderPortalVert(const int& tileX, const int& tileY,
+									const float* vert, unsigned char flag,
+									dtPolyRef& nborder, int& nvert) const
+{
+	static const int MAX_NEIS = 32;
+	dtMeshTile* neis[MAX_NEIS];
+	int nneis(getTilesAt(tileX, tileY, neis, MAX_NEIS));
+	for (int j = 0; j < nneis; ++j)
+	{
+		dtTileRef ntileRef(getTileRef(neis[j]));
+		const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+		dtMeshExtra* nextra(&m_extras[ntileIndex]);
+		if (!nextra->header)
+			continue;
+		if (findBorderPortalVert(vert, nextra, 0, flag, nborder, nvert))
+			return true;
+	}
+	return false;
+}
+
+bool dtNavMesh::findNeibBorderPortalVert(const int& tileX, const int& tileY,
+										const float* vert, unsigned char flag,
+										dtPolyRef& nborder, int& nvert) const
+{
+	int dx(0), dy(0);
+	for (int i = 0; i < 8; ++i)
+	{
+		getTileOffset(i, dx, dy);
+		if (findBorderPortalVert(tileX + dx, tileY + dy, vert, flag, nborder, nvert))
+			return true;
+	}
+
+	return false;
+}
+
+bool dtNavMesh::getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const
+{
+	int maxVertPerExtra(0), totalBorderCount(0);
+	for (int i(0); i < getMaxTiles(); ++i)
+	{
+		if (m_extras[i].header)
+		{
+			maxVertPerExtra = dtMax(maxVertPerExtra, m_extras[i].header->vertCount);
+			totalBorderCount += m_extras[i].header->borderCount;
+		}
+	}
+	if (maxVertPerExtra == 0)
+		return false;
+
+	int maxVertCount(maxVertPerExtra * getMaxTiles());
+	int flagSize(sizeof(unsigned char) * maxVertCount);
+	unsigned char* flags((unsigned char*)dtAlloc(flagSize, DT_ALLOC_TEMP));
+	if (!flags)
+		return false;
+	memset(flags, 0, flagSize);
+
+	int vertSize(sizeof(float) * extraVertCount * 3);
+	float* verts((float*)dtAlloc(vertSize, DT_ALLOC_TEMP));
+	if (!verts)
+		return false;
+	memset(verts, 0, vertSize);
+
+	int splitSize(sizeof(int) * totalBorderCount);
+	int* splits((int*)dtAlloc(splitSize, DT_ALLOC_TEMP));
+	if (!splits)
+		return false;
+	memset(splits, 0, splitSize);
+
+	int nvert(0), nsplit(0);
+	for (int i(0); i < getMaxTiles(); ++i)
+	{
+		dtMeshExtra* extra(&m_extras[i]);
+		if (!extra->header)
+			continue;
+                if (nsplit == totalBorderCount)
+                    break;
+
+		for (int j(0), k(0); j < extra->header->borderCount; ++j)
+		{
+                if (nsplit == totalBorderCount)
+                    break;
+			for (; k < extra->splits[j]; ++k)
+			{
+				const unsigned short nei(extra->neis[k]);
+				if (!(nei & 0x80) && (nei & 0x0f) != 0x0f)
+					continue;
+
+				if (flags[i * maxVertPerExtra + k] == 0x01)
+					continue;
+
+				if (!walkBorder(i, j, k, maxVertPerExtra, flags, verts, nvert))
+				{
+					dtFree(flags);
+					dtFree(verts);
+					dtFree(splits);
+					return false;
+				}
+
+				if (nsplit == totalBorderCount)
+                    break;
+				splits[nsplit++] = nvert;
+			}
+		}
+	}
+	dtFree(flags);
+
+	vertCount = 0;
+	borderCount = 0;
+	if (nvert > 0 && nsplit > 0)
+	{
+		vertices = (float*)dtAlloc(sizeof(float) * 3 * nvert, DT_ALLOC_TEMP);
+		borders = (int*)dtAlloc(sizeof(int) * nsplit, DT_ALLOC_TEMP);
+		if (vertices && borders)
+		{
+			for (int i(0), j(0); i < nsplit; ++i)
+			{
+				for (; j < splits[i]; ++j)
+				{
+					const float* v(&verts[j * 3]);
+					float* tv(&vertices[vertCount++ * 3]);
+					tv[0] = v[0];
+					tv[1] = v[1];
+					tv[2] = v[2];
+				}
+				borders[borderCount++] = vertCount;
+			}
+		}
+	}
+
+	dtFree(verts);
+	dtFree(splits);
+	return vertCount > 0;
+}
+
+dtMeshTile* dtNavMesh::getTileByIndex(const int& i)
+{
+	if (i >= 0 && i < getMaxTiles())
+	{
+		dtMeshTile* tile(&m_tiles[i]);
+		if (tile && tile->header)
+			return tile;
+	}
+	return nullptr;
+}
+
+dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i)
+{
+	if (i >= 0 && i < getMaxTiles())
+	{
+		dtMeshExtra* extra(&m_extras[i]);
+		if (extra && extra->header)
+			return extra;
+	}
+	return nullptr;
+}
+
+dtMeshExtra* dtNavMesh::getExtra(const dtPolyRef& ref)
+{
+	if (ref == 0)
+		return nullptr;
+
+	return getExtraByIndex(decodePolyIdTile(ref));
+}
+
+bool dtNavMesh::walkBorder(const int& extraIdx, const int& borderIdx, const int& vertIdx,
+							const int& maxVertPerExtra, unsigned char* flags,
+							float* verts, int& vertCount) const
+{
+	int iter(0), iextra(extraIdx), iborder(borderIdx), ivert(vertIdx);
+	while (iter < extraVertCount)
+	{
+		++iter;
+		if (vertCount == extraVertCount)
+			return true;
+		int iflag(maxVertPerExtra * iextra + ivert);
+		if (flags[iflag] == 0x01)
+			break;
+
+		dtMeshExtra* extra(&m_extras[iextra]);
+		const float* v(&extra->vertices[ivert * 3]);
+		float* tv(&verts[vertCount++ * 3]);
+		tv[0] = v[0];
+		tv[1] = v[1];
+		tv[2] = v[2];
+
+		flags[iflag] = 0x01;
+		unsigned int lidx(extra->linkIndices[ivert]);
+		if (!isBorderLinkValid(lidx))
+		{
+			int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
+				eidx(extra->splits[iborder]);
+
+			ivert = ivert == eidx - 1 ? sidx : ivert + 1;
+		}
+		else
+		{
+			bool bLinked(extra->links[lidx].borderId != 0);
+//			if (bLinked)
+//			{
+//				int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
+//					eidx(extra->splits[iborder]);
+//
+//				int tvert(ivert);
+//				while (true)
+//				{
+//					tvert = tvert == sidx ? eidx - 1 : tvert - 1;
+//					if (extra->neis[tvert] & 0x40)
+//					{
+//						bLinked = extra->linkIndices[tvert] == DT_BORDER_IN_LINK;
+//						break;
+//					}
+//				}
+//			}
+			if (bLinked)
+			{
+				dtBorderLink* link(&extra->links[lidx]);
+				int linkExtraIdx(decodePolyIdTile(link->borderId));
+				dtAssert(linkExtraIdx < getMaxTiles());
+				dtMeshExtra* linkExtra(&m_extras[linkExtraIdx]);
+				dtAssert(linkExtra->header);
+
+				flags[maxVertPerExtra * linkExtraIdx + link->vertIndex] = 0x01;
+
+				int linkBorderIdx(decodePolyIdPoly(link->borderId));
+				int sidx(linkBorderIdx == 0 ? 0 : linkExtra->splits[linkBorderIdx - 1]),
+					eidx(linkExtra->splits[linkBorderIdx]);
+
+				iextra = linkExtraIdx;
+				iborder = linkBorderIdx;
+				ivert = link->vertIndex == eidx - 1 ? sidx : link->vertIndex + 1;
+			}
+			else
+			{
+//				unsigned short nei(extra->neis[ivert]);
+//				unsigned char dir(nei & 0x0f);
+//				int tx(extra->header->x + getDirOffsetX(dir)), ty(extra->header->y + getDirOffsetY(dir));
+//				if (getTileCountAt(tx, ty) == 0)
+				{
+					if (!walkMissing(iextra, iborder, ivert, maxVertPerExtra, flags, verts, vertCount))
+						return false;
+
+					dtMeshExtra* nextra(&m_extras[iextra]);
+					int sidx(iborder == 0 ? 0 : nextra->splits[iborder - 1]),
+						eidx(nextra->splits[iborder]);
+					ivert = ivert == eidx - 1 ? sidx : ivert + 1;
+				}
+//				else
+//				{
+//					int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
+//						eidx(extra->splits[iborder]);
+//
+//					while (true)
+//					{
+//						ivert = ivert == sidx ? eidx - 1 : ivert - 1;
+//						if (extra->neis[ivert] & 0x40)
+//							break;
+//					}
+//				}
+			}
+		}
+
+		if (iextra == extraIdx && iborder == borderIdx && ivert == vertIdx)
+			break;
+	}
+
+	return true;
+}
+
+void dtNavMesh::getTileOffset(const int& side, int& dx, int& dy) const
+{
+	dx = 0;
+	dy = 0;
+	switch (side)
+	{
+	case 0: dx++; break;
+	case 1: dx++; dy++; break;
+	case 2: dy++; break;
+	case 3: dx--; dy++; break;
+	case 4: dx--; break;
+	case 5: dx--; dy--; break;
+	case 6: dy--; break;
+	case 7: dx++; dy--; break;
+	default:
+		break;
+	};
+}
+
+bool dtNavMesh::walkMissing(int& iextra, int& iborder, int& ivert,
+							const int& maxVertPerExtra, unsigned char* flags,
+							float* verts, int& vertCount) const
+{
+	int iter(0);
+	dtMeshExtra* extra(&m_extras[iextra]);
+	unsigned char dir(extra->neis[ivert] & 0x0f);
+	dtAssert(dir != 0x0f);
+
+	while (iter < maxVertPerExtra)
+	{
+		++iter;
+		if (vertCount == maxVertPerExtra)
+			return true;
+
+		extra = &m_extras[iextra];
+		int sidx(iborder == 0 ? 0 : extra->splits[iborder - 1]),
+			eidx(extra->splits[iborder]);
+		ivert = ivert == eidx - 1 ? sidx : ivert + 1;
+		int iflag(maxVertPerExtra * iextra + ivert);
+		if (flags[iflag] == 0x01)
+			return true;
+
+		const float* v(&extra->vertices[ivert * 3]);
+		float* tv(&verts[vertCount++ * 3]);
+		tv[0] = v[0];
+		tv[1] = v[1];
+		tv[2] = v[2];
+		flags[iflag] = 0x01;
+		if (extra->neis[ivert] & 0x40)
+			return true;
+
+		unsigned char ndir(dir);
+		dtPolyRef nborder(0);
+		int tx(extra->header->x), ty(extra->header->y), nvert(0);
+		for (unsigned char i(0); i < 3; ++i)
+		{
+			ndir = (dir + i) & 0x03;
+			tx += getDirOffsetX(ndir);
+			ty += getDirOffsetY(ndir);
+			if (i > 0 && findBorderPortalVert(tx, ty, v, 0xff, nborder, nvert))
+			{
+				iextra = decodePolyIdTile(nborder);
+				iborder = decodePolyIdPoly(nborder);
+				ivert = nvert;
+				dir = (ndir + 2) & 0x03;
+				break;
+			}
+		}
+	}
+
+	return true;
+}
+
+dtStatus dtNavMesh::AddExtra(const dtMeshTile* tile, unsigned char* extraData, int extraDataSize)
+{
+	if (!extraData || extraDataSize == 0)
+		return DT_SUCCESS;
+
+	dtTileRef tileRef(getTileRef(tile));
+	const int tileIndex(decodePolyIdTile((dtPolyRef)tileRef));
+	dtMeshExtra* extra(&m_extras[tileIndex]);
+	memset(extra, 0, sizeof(dtMeshExtra));
+	dtMeshExtraHeader* extraHeader((dtMeshExtraHeader*)extraData);
+	const int extraHeaderSize(dtAlign4(sizeof(dtMeshExtraHeader)));
+	const int vertSize(dtAlign4(sizeof(float) * 3 * extraHeader->vertCount));
+	const int borderSizer(dtAlign4(sizeof(int) * extraHeader->borderCount));
+	const int neiSize(dtAlign4(sizeof(unsigned short) * extraHeader->vertCount));
+	const int linkIndexSize(dtAlign4(sizeof(unsigned int) * extraHeader->vertCount));
+	const int borderLinkSize(dtAlign4(sizeof(dtBorderLink) * extraHeader->linkCount));
+    const int borderPolySize(dtAlign4(sizeof(dtBorderPoly) * (extraHeader->linkCount << 1)));
+
+	extraVertCount += extraHeader->vertCount;
+
+	extra->header = extraHeader;
+	extra->data = extraData;
+	extra->dataSize = extraDataSize;
+	extra->salt = tile->salt;
+	extra->linksFreeList = 0;
+
+	unsigned char* d(extraData + extraHeaderSize);
+	extra->vertices = (float*)d; d += vertSize;
+	extra->splits = (int*)d; d += borderSizer;
+	extra->neis = (unsigned short*)d; d += neiSize;
+	extra->linkIndices = (unsigned int*)d; d += linkIndexSize;
+	extra->links = (dtBorderLink*)d; d += borderLinkSize;
+    extra->polys = (dtBorderPoly*)d; d+= borderPolySize;
+
+	memset(extra->linkIndices, DT_NULL_LINK, linkIndexSize);
+	extra->linksFreeList = 0;
+	extra->links[extraHeader->linkCount - 1].next = DT_NULL_LINK;
+	for (int i = 0; i < extraHeader->linkCount - 1; ++i)
+		extra->links[i].next = i + 1;
+
+	if (extraHeader->linkCount > 0)
+	{
+		for (int i(0), ii(0); i < extraHeader->borderCount; ++i)
+		{
+			for (; ii < extra->splits[i]; ++ii)
+			{
+				unsigned short nei(extra->neis[ii]);
+				if (!(nei & 0x80))
+					continue;
+
+				dtPolyRef nborder(0);
+				int nvert(0);
+//				int nextras(getTilesAt(extraHeader->x, extraHeader->y, neis, MAX_NEIS));
+//				for (int j = 0; j < nextras; ++j)
+//				{
+//					dtTileRef ntileRef(getTileRef(neis[j]));
+//					const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+//					dtMeshExtra* nextra(&m_extras[ntileIndex]);
+//					if (nextra == extra || !nextra->header)
+//						continue;
+//					if (findBorderPortalVert(tileIndex, ii, nborder, nvert))
+//						break;
+//				}
+//				if (nborder == 0)
+//					findNeibBorderPortalVert(tileIndex, ii, nborder, nvert);
+                
+                findBorderPortalVert(tileIndex, ii, nborder, nvert);
+
+				unsigned int lindex(allocBorderLink(extra));
+				if (lindex == DT_NULL_LINK)
+					continue;
+
+				dtBorderLink* borderLink(&extra->links[lindex]);
+				borderLink->borderId = nborder;
+				borderLink->vertIndex = nvert;
+				extra->linkIndices[ii] = lindex;
+				if (dtMeshExtra* linkExtra = getExtra(nborder))
+					linkExtra->linkIndices[nvert] = DT_BORDER_IN_LINK;
+			}
+		}
+		for (int i(0), ii(0); i < extraHeader->borderCount; ++i)
+		{
+			for (; ii < extra->splits[i]; ii++)
+			{
+				unsigned short nei(extra->neis[ii]);
+				if (!(nei & 0x40))
+					continue;
+
+				dtPolyRef nborder(0);
+				int nvert(0);
+//				int nextras(getTilesAt(extraHeader->x, extraHeader->y, neis, MAX_NEIS));
+//				for (int j = 0; j < nextras; ++j)
+//				{
+//					dtTileRef ntileRef(getTileRef(neis[j]));
+//					const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+//					dtMeshExtra* nextra(&m_extras[ntileIndex]);
+//					if (nextra == extra || !nextra->header)
+//						continue;
+//					if (findBorderPortalVert(tileIndex, ii, nborder, nvert))
+//						break;
+//				}
+//				if (nborder == 0)
+//					findNeibBorderPortalVert(tileIndex, ii, nborder, nvert);
+                if (!findBorderPortalVert(tileIndex, ii, nborder, nvert))
+                    continue;
+
+//				if (nborder == 0)
+//					continue;
+
+				dtMeshExtra* nextra(getExtra(nborder));
+				dtAssert(nextra);
+				unsigned int nlinkIdx(nextra->linkIndices[nvert]);
+				if (!isBorderLinkValid(nlinkIdx))
+					continue;
+
+				dtBorderLink* borderLink(&nextra->links[nlinkIdx]);
+//				dtAssert(borderLink->borderId == 0);
+				if (borderLink->borderId != 0)
+				{
+					int ti = decodePolyIdTile(borderLink->borderId);
+					dtMeshExtra* textra = &m_extras[ti];
+					int pi = decodePolyIdPoly(borderLink->borderId);
+					nextra->neis[nlinkIdx] |= 0x0400;
+				}
+
+				borderLink->borderId = getBorderRef(extra, i);
+				borderLink->vertIndex = ii;
+				extra->linkIndices[ii] = DT_BORDER_IN_LINK;
+			}
+		}
+
+		//for (int i(0); i < 9; ++i)
+		//{
+		//	int dx(0), dy(0);
+		//	getTileOffset(i, dx, dy);
+		//	int nnei(getTilesAt(extra->header->x + dx, extra->header->y + dy, neis, MAX_NEIS));
+		//	for (int i(0); i < extraHeader->borderCount; ++i)
+		//	{
+		//		int start(i == 0 ? 0 : extra->splits[i - 1]);
+		//		for (int ii(start); ii < extra->splits[i]; ii++)
+		//		{
+		//			unsigned short nei(extra->neis[ii]);
+		//			if (!(nei & 0x80))
+		//				continue;
+		//			unsigned int lidx(extra->linkIndices[ii]);
+		//			if (!isBorderLinkValid(lidx))
+		//				continue;
+		//			int ivert(ii);
+		//			while (true)
+		//			{
+		//				ivert = ivert == start ? extra->splits[i] - 1 : ivert - 1;
+		//				unsigned short lnei(extra->neis[ivert]);
+		//				if (lnei & 0x40)
+		//				{
+		//					if (extra->linkIndices[ivert] != DT_BORDER_IN_LINK)
+		//					{
+		//						dtBorderLink* link(&extra->links[lidx]);
+		//						link->borderId = 0;
+		//						link->vertIndex = 0;
+		//					}
+		//					break;
+		//				}
+		//			}
+		//		}
+		//	}
+		//}
+	}
+
+	return DT_SUCCESS;
+}
+
+dtStatus dtNavMesh::RemoveExtra(const unsigned char& tileIndex, unsigned char** extraData, int* extraDataSize)
+{
+	dtMeshExtra* extra(&m_extras[tileIndex]);
+	if (extra->header)
+	{
+		static const int MAX_NEIS = 32;
+		dtMeshTile* neis[MAX_NEIS];
+		int dx(0), dy(0);
+		for (int i = 0; i < 9; ++i)
+		{
+			getTileOffset(i, dx, dy);
+			int nneis(getTilesAt(extra->header->x + dx, extra->header->y + dy, neis, MAX_NEIS));
+			for (int j = 0; j < nneis; ++j)
+			{
+				dtTileRef ntileRef(getTileRef(neis[j]));
+				const int ntileIndex(decodePolyIdTile((dtPolyRef)ntileRef));
+				dtMeshExtra* nextra(&m_extras[ntileIndex]);
+				if (nextra == extra || !nextra->header)
+					continue;
+
+				for (int i(0), ii(0); i < nextra->header->borderCount; ++i)
+				{
+					for (; ii < nextra->splits[i]; ii++)
+					{
+						unsigned int lidx(nextra->linkIndices[ii]);
+						if (!isBorderLinkValid(lidx))
+							continue;
+
+						dtBorderLink* link(&nextra->links[lidx]);
+						int nextraIdx(decodePolyIdTile(link->borderId));
+						if (tileIndex == nextraIdx)
+						{
+							link->borderId = 0;
+							link->vertIndex = 0;
+						}
+					}
+				}
+			}
+		}
+
+		extraVertCount -= extra->header->vertCount;
+		dtAssert(extraVertCount >= 0);
+
+		if (extraData)
+			*extraData = extra->data;
+		if (extraDataSize)
+			*extraDataSize = extra->dataSize;
+
+		memset(extra, 0, sizeof(dtMeshExtra));
+	}
+	return DT_SUCCESS;
+}
+
+int dtNavMesh::getTileCountAt(const int x, const int y) const
+{
+	int n(0);
+	int h = computeTileHash(x, y, m_tileLutMask);
+	dtMeshTile* tile = m_posLookup[h];
+	while (tile)
+	{
+		if (tile->header &&
+			tile->header->x == x &&
+			tile->header->y == y)
+		{
+			++n;
+		}
+		tile = tile->next;
+	}
+	return n;
+}
+
+bool dtNavMesh::getBorderPolyInTile(const int& iextra, const float* lv, int& outPolyIdx, unsigned char& outVertIdx) const
+{
+    dtMeshTile* tile(&m_tiles[iextra]);
+    float halfExtents[3] = {0.01f, 0.01f, 0.01f}, bmin[3], bmax[3];
+    dtVsub(bmin, lv, halfExtents);
+    dtVadd(bmax, lv, halfExtents);
+    dtPolyRef polys[4];
+    int polyCount(queryPolygonsInTile(tile, bmin, bmax, polys, 4));
+    for (int i = 0; i < polyCount; ++i)
+    {
+        const dtPolyRef &polyRef(polys[i]);
+        const int polyIdx(decodePolyIdPoly(polyRef));
+        const dtPoly& poly(tile->polys[polyIdx]);
+        for (unsigned char vi(0); vi < poly.vertCount; ++vi)
+        {
+            if (!(poly.neis[vi] & DT_EXT_LINK))
+                continue;
+            const float* evert(&tile->verts[poly.verts[i] * 3]);
+            if (dtAbs(evert[0] - lv[0]) < 0.001f
+                && dtAbs(evert[1] - lv[1]) < tile->header->walkableClimb
+                && dtAbs(evert[2] - lv[2]) < 0.001f)
+            {
+                outPolyIdx = polyIdx;
+                outVertIdx = vi;
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+const dtLink* dtNavMesh::getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const unsigned char& vertIdx) const
+{
+    if (!tile)
+        return nullptr;
+    
+    unsigned int linkIdx(poly.firstLink);
+    while (linkIdx != DT_NULL_LINK)
+    {
+        const dtLink* link(&tile->links[linkIdx]);
+        linkIdx = link->next;
+        if (link->edge == vertIdx)
+        {
+            return link;
+        }
+    }
+    return nullptr;
+}
+
+bool dtNavMesh::getBorderVert(const dtMeshTile* tile, const dtMeshExtra* extra, const int& polyIdx, const dtPolyRef& tRef,
+                                  const unsigned short& nei, int& outBorderVert) const
+{
+    if (!tile)
+        return false;
+    
+    const dtPoly& poly(tile->polys[polyIdx]);
+    unsigned int linkIdx(poly.firstLink);
+    const int mapCount(extra->header->linkCount << 1);
+    while (linkIdx != DT_NULL_LINK)
+    {
+        const dtLink* link(&tile->links[linkIdx]);
+        linkIdx = link->next;
+        if (link->ref == tRef)
+        {
+            unsigned char tvert(link->edge);
+            if (nei & 0x80)
+            {
+                tvert = tvert == poly.vertCount - 1 ? 0 : tvert + 1;
+            }
+            for (int i(0); i < mapCount; ++i)
+            {
+                const dtBorderPoly* borderPoly(&extra->polys[i]);
+                if (borderPoly->polyIdx == polyIdx && borderPoly->vertIdx == tvert)
+                {
+                    outBorderVert = borderPoly->borderVert;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+bool dtNavMesh::getBorderPoly(const dtMeshExtra* extra, const int& borderVert, int& outPolyIdx, unsigned char& outVertIdx) const
+{
+    int mapCount(extra->header->linkCount << 1);
+    for (int i(0); i < mapCount; ++i)
+    {
+        const dtBorderPoly* borderPoly(&extra->polys[i]);
+        if (borderPoly->borderVert == borderVert)
+        {
+            outPolyIdx = borderPoly->polyIdx;
+            outVertIdx = borderPoly->vertIdx;
+            return outPolyIdx != -1;
+        }
+    }
+    return false;
+}

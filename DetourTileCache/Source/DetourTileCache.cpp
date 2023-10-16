@@ -781,7 +781,11 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 		extraParams.nborders = bc.tbset->nborders;
 		extraParams.splits = bc.tbset->splits;
 		extraParams.vertices = bc.tbset->vertices;
-		dtCreateNavMeshExtraData(&params, &extraParams, &extraData, &extraDataSize);
+        extraParams.cs = m_params.cs;
+        extraParams.ch = m_params.ch;
+        dtVcopy(extraParams.bmin, tile->header->bmin);
+        dtVcopy(extraParams.bmax, tile->header->bmax);
+		dtCreateNavMeshExtraData(&extraParams, navData, &extraData, &extraDataSize);
 	}
 
 	// Remove existing tile.
