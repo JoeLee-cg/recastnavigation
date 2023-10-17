@@ -2244,30 +2244,9 @@ bool dtNavMesh::getBorderVert(const dtMeshTile* tile, const dtMeshExtra* extra, 
 			tvert = tvert == 0 ? poly.vertCount - 1 : tvert - 1;
 		if (const dtLink* nlink = getPolyLinkInTile(tile, poly, tRef, tvert))
 		{
-			unsigned short nnei(extra->neis[borderPoly->borderVert]);
-			if ((nei | (nnei & 0xc0)) != 0xc0)
-			{
+			unsigned short nnei(extra->neis[borderPoly->borderVert] & 0xc0);
+			if ((nei | nnei) != 0xc0)
 				continue;
-				//if (bIter || (nnei & 0xc0) || !(nnei & 0x20))
-				//	continue;
-
-				//tvert = nlink->edge;
-
-				//if (nei & 0x80)
-				//	tvert = tvert == poly.vertCount - 1 ? 0 : tvert + 1;
-				//else if (nei & 0x40)
-				//	tvert = tvert == 0 ? poly.vertCount - 1 : tvert - 1;
-
-				//if (const dtLink* nnlink = getPolyLinkInTile(tile, poly, 0, tvert))
-				//{
-				//	const int ntileIdx(decodePolyIdTile(nnlink->ref));
-				//	const int npolyIdx(decodePolyIdPoly(nnlink->ref));
-				//	const dtMeshTile* ntile(&m_tiles[ntileIdx]);
-				//	const dtMeshExtra* nextra(&m_extras[ntileIdx]);
-				//	const dtPolyRef polyRef(getPolyRefBase(tile) | borderPoly->polyIdx);
-				//	return getBorderVert(ntile, nextra, nnlink, polyRef, nei, true, outBorderRef, outBorderVert);
-				//}
-			}
 
 			outBorderVert = borderPoly->borderVert;
 			for (int ib(0), pb(0); ib < extra->header->borderCount; pb = extra->splits[ib++])
