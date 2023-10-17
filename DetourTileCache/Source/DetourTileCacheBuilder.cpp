@@ -1097,6 +1097,13 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
                     {
                         link |= 0x40;
                     }
+					if ((v[0] == 0 && v[2] == 0)
+						|| (v[0] == w && v[2] == h)
+						|| (v[0] == 0 && v[2] == h)
+						|| (v[0] == w && v[2] == 0))
+					{
+						link |= 0x20;
+					}
                     
 					unsigned char* dst(&cont.verts[cont.nverts++ * 4]);
 					dst[0] = v[0];
@@ -1119,7 +1126,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 		if (!tbset.vertices)
 			return DT_FAILURE | DT_OUT_OF_MEMORY;
 
-		tbset.linkCount = linkCount;
+		tbset.linkCount = linkCount * 2;
 		nvert = 0;
 		for (int i(0); i < ncont; ++i)
 		{

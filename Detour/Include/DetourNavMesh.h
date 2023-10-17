@@ -318,6 +318,7 @@ struct dtMeshExtraHeader
     int layer;
     int borderCount;
     int vertCount;
+	int polyCount;
     int linkCount;
     float walkableClimb;
 };
@@ -326,6 +327,8 @@ struct dtBorderLink
 	dtPolyRef borderId;
 	int vertIndex;
 	unsigned int next;
+	unsigned char flags;
+	float dis;
 };
 struct dtBorderPoly
 {
@@ -726,7 +729,7 @@ private:
 public:
 	dtPolyRef getExtraRef(const dtMeshExtra* extra) const;
 	dtPolyRef getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const;
-	bool findBorderPortalVert(const float* vert, dtMeshExtra* extra,
+	bool findBorderPortalVert(const float* vert, const dtMeshExtra* extra,
 								const int& start, unsigned char flag,
 								dtPolyRef& nborder, int& nvert) const;
 	bool findBorderPortalVert(const int& tileX, const int& tileY,
@@ -734,13 +737,8 @@ public:
     bool findNeibBorderPortalVert(const int& tileX, const int& tileY,
                                 const float* vert, unsigned char flag, dtPolyRef& nborder, int& nvert) const;
     
-    bool findBorderPortalVert(const int& iextra, const int& ivert,
+    bool findBorderPortalVert(const int& iextra, const int& ivert, bool& bPolyLinked,
                               dtPolyRef& nborder, int& nvert) const;
-    bool findBorderPortalVert(const int& tileX, const int& tileY,
-                              const int& iextra, const int& ivert,
-                              dtPolyRef& nborder, int& nvert) const;
-    bool findNeibBorderPortalVert(const int& iextra, const int& ivert,
-                                  dtPolyRef& nborder, int& nvert) const;
     
     bool getBorderPoly(const dtMeshExtra* extra, const int& borderVert, int& outPolyIdx, unsigned char& outVertIdx) const;
 
@@ -748,12 +746,8 @@ public:
 	dtMeshExtra* getExtraByIndex(const int& i);
 	dtMeshExtra* getExtra(const dtPolyRef& ref);
 	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
-    inline bool isBorderLinkValid(const unsigned int& idx) const
-    {
-        return idx != DT_BORDER_IN_LINK && idx != DT_NULL_LINK;
-    }
+	bool isVectexOverlap(const float* v0, const float* v1, const float& walkableClimb);
 private:
-	static const unsigned int DT_BORDER_IN_LINK = 0xfffffffe;
     inline int getDirOffsetX(char dir) const
     {
         const char offset[4] = { -1, 0, 1, 0, };
@@ -776,8 +770,10 @@ private:
 	int getTileCountAt(const int x, const int y) const;
     bool getBorderPolyInTile(const int& iextra, const float* lv, int& outPolyIdx, unsigned char& outVertIdx) const;
     const dtLink* getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const unsigned char& vertIdx) const;
-    bool getBorderVert(const dtMeshTile* tile, const dtMeshExtra* extra, const int& polyIdx, const dtPolyRef& tRef,
-                                    const unsigned short& nei, int& outBorderVert) const;
+    const dtLink* getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const dtPolyRef& tpolyRef, const unsigned char& vertIdx) const;
+    bool getBorderVert(const dtMeshTile* tile, const dtMeshExtra* extra, const dtLink* link, const dtPolyRef& tRef,
+                                    const unsigned short& nei, dtPolyRef& outBorderRef, int& outBorderVert) const;
+	void createBorderLink(const int& tileIndex, const int& iborder, const int& ivert, unsigned char mask);
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

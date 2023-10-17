@@ -684,7 +684,7 @@ bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned
 	const int nieSize(dtAlign4(sizeof(unsigned short) * vertCount));
 	const int linkIndexSize(dtAlign4(sizeof(unsigned int) * vertCount));
 	const int linkSize(dtAlign4(sizeof(dtBorderLink) * params->linkCount));
-    const int polyMapSize(dtAlign4(sizeof(dtBorderPoly) * (params->linkCount << 1)));
+    const int polyMapSize(dtAlign4(sizeof(dtBorderPoly) * (params->linkCount * 2 + 4)));
 
 	const int dataSize(headerSize + vertSize + borderSize + nieSize + linkIndexSize + linkSize + polyMapSize);
 	unsigned char* data((unsigned char*)dtAlloc(dataSize, DT_ALLOC_PERM));
@@ -708,9 +708,9 @@ bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned
     header->x = meshHeader->x;
     header->y = meshHeader->y;
     header->layer = meshHeader->layer;
-	header->walkableClimb = header->walkableClimb;
+	header->walkableClimb = meshHeader->walkableClimb;
+	header->polyCount = 0;
 
-    int polyCount(0);
 	for (int i(0); i < vertCount; ++i)
 	{
 		const unsigned short* iv(&params->vertices[i * 4]);
@@ -721,10 +721,10 @@ bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned
 
 		neis[i] = iv[3];
         
-        if (!(neis[i] & 0x80) && !(neis[i] & 0x40))
+        if (!(neis[i] & 0xe0))
             continue;
         
-        dtBorderPoly* borderPoly(&polyMap[polyCount++]);
+        dtBorderPoly* borderPoly(&polyMap[header->polyCount++]);
         borderPoly->borderVert = i;
         borderPoly->polyIdx = -1;
         borderPoly->vertIdx = 0;
@@ -734,29 +734,32 @@ bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned
             const dtPoly* poly(&meshPolys[j]);
             for (unsigned char ppvi(poly->vertCount - 1), pvi(0); pvi < poly->vertCount; ppvi = pvi++)
             {
-                unsigned short nei(poly->neis[neis[i] & 0x40 ? ppvi : pvi]);
-                if (!(nei & DT_EXT_LINK))
-                    continue;
-                
-                unsigned short ndir(0x0f);
-                switch (nei & ~DT_EXT_LINK) {
-                    case 4:
-                        ndir = 0;
-                        break;
-                    case 2:
-                        ndir = 1;
-                        break;
-                    case 0:
-                        ndir = 2;
-                        break;
-                    case 6:
-                        ndir = 3;
-                        break;
-                    default:
-                        break;
-                }
-                if (ndir != dir)
-                    continue;
+				if (!(neis[i] & 0x20))
+				{
+					unsigned short nei(poly->neis[neis[i] & 0x40 ? ppvi : pvi]);
+					if (!(nei & DT_EXT_LINK))
+						continue;
+					
+					unsigned short ndir(0x0f);
+					switch (nei & ~DT_EXT_LINK) {
+					case 4:
+						ndir = 0;
+						break;
+					case 2:
+						ndir = 1;
+						break;
+					case 0:
+						ndir = 2;
+						break;
+					case 6:
+						ndir = 3;
+						break;
+					default:
+						break;
+					}
+					if (ndir != dir)
+						continue;
+				}
                 
                 const float* pv(&meshVerts[poly->verts[pvi] * 3]);
                 if (dtAbs(v[0] - pv[0]) > 0.01f || dtAbs(v[2] - pv[2]) > 0.01f)
@@ -770,6 +773,7 @@ bool dtCreateNavMeshExtraData(dtNavMeshExtraCreateParams* params, const unsigned
                 break;
         }
 	}
+	dtAssert(header->polyCount <= (header->linkCount + 4));
 	for (int i(0); i < params->nborders; ++i)
 	{
 		borderSplits[i] = params->splits[i];

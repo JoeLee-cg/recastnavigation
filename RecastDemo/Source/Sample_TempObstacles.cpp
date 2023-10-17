@@ -511,6 +511,11 @@ void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh)
 	const unsigned int rcolor(duRGBA(255, 0, 0, 255));
 	const unsigned int gcolor(duRGBA(0, 255, 0, 255));
 	const unsigned int bcolor(duRGBA(0, 0, 255, 255));
+	const unsigned int ycolor(duRGBA(255, 255, 0, 255));
+	const unsigned int pcolor(duRGBA(255, 0, 255, 255));
+	const unsigned int ocolor(duRGBA(0, 255, 255, 255));
+	const unsigned int wcolor(duRGBA(0, 0, 0, 255));
+	const unsigned int bbcolor(duRGBA(255, 255, 255, 255));
 
 	float* vertices(nullptr);
 	int* borders(nullptr);
@@ -593,15 +598,64 @@ void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh)
 			float fy = extra->vertices[i * 3 + 1];
 			float fz = extra->vertices[i * 3 + 2];
 			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
-            if (mesh->isBorderLinkValid(extra->linkIndices[i]))
-            {
-                if (extra->links[extra->linkIndices[i]].borderId == 0)
-                    dd->vertex(fx, fy, fz, rcolor);
-            }
-//            unsigned short flag(extra->neis[i]);
-//            if (!(flag & 0x0400))
-//                continue;
-//            dd->vertex(fx, fy, fz, rcolor);
+			if (extra->linkIndices[i] != DT_NULL_LINK)
+			{
+				if (extra->links[extra->linkIndices[i]].borderId == 0)
+					dd->vertex(fx, fy, fz, gcolor);
+				else if (extra->links[extra->linkIndices[i]].flags & 0x80)
+					dd->vertex(fx, fy, fz, ocolor);
+				else
+					dd->vertex(fx, fy, fz, wcolor);
+			}
+			else if (extra->neis[i] & 0x80)
+			{
+				dd->vertex(fx, fy, fz, bcolor);
+			}
+			else if (extra->neis[i] & 0x40)
+			{
+				dd->vertex(fx, fy, fz, ycolor);
+			}
+			else if (extra->neis[i] & 0xc0)
+			{
+				dd->vertex(fx, fy, fz, pcolor);
+			}
+			else
+			{
+				dd->vertex(fx, fy, fz, rcolor);
+			}
+
+			//if (mesh->isBorderLinkValid(extra->linkIndices[i]))
+			//{
+			//	if (extra->links[extra->linkIndices[i]].borderId == 0)
+			//		dd->vertex(fx, fy, fz, gcolor);
+			//	else
+			//	{
+			//		dtMeshExtra* nextra = mesh->getExtra(extra->links[extra->linkIndices[i]].borderId);
+			//		int ni(extra->links[extra->linkIndices[i]].vertIndex);
+			//		float nfx = nextra->vertices[ni * 3 + 0];
+			//		float nfy = nextra->vertices[ni * 3 + 1];
+			//		float nfz = nextra->vertices[ni * 3 + 2];
+			//		dd->vertex(fx, fy, fz, bcolor);
+			//		dd->vertex(nfx, nfy, nfz, rcolor);
+			//	}
+			//}
+			
+			//if (extra->header->x == 5 && extra->header->y == 4 && extra->header->layer == 0 && i == 6)
+			//{
+			//	dd->vertex(fx, fy, fz, rcolor);
+			//}
+   //         if (mesh->isBorderLinkValid(extra->linkIndices[i]))
+   //         {
+			//	dd->vertex(fx, fy, fz, rcolor);
+   //         }
+			//else if (mesh->isBorderInLink(extra->linkIndices[i]))
+			//{
+			//	dd->vertex(fx, fy, fz, bcolor);
+			//}
+			unsigned short flagss(extra->neis[i]);
+			if (!(flagss & 0x0400))
+				continue;
+			dd->vertex(fx, fy, fz, bbcolor);
             
 //			dd->vertex(fx, fy, fz, (extra->neis[i] & 0x80) ? gcolor : (extra->neis[i] & 0x40) ? bcolor : rcolor);
 //            dd->vertex(fx, fy, fz, i == 0 ? gcolor : i == 1 ? bcolor : rcolor);
