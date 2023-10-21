@@ -311,6 +311,42 @@ private:
 	dtMeshTile& operator=(const dtMeshTile&);
 };
 
+struct dtMeshExtraHeader
+{
+    int x;
+    int y;
+    int layer;
+    int borderCount;
+    int vertCount;
+    int linkCount;
+    float walkableClimb;
+	float cs;
+};
+struct dtBorderLink
+{
+	dtPolyRef borderId;
+	int vertIndex;
+	unsigned int next;
+	unsigned char flags;
+	float dis;
+};
+struct dtMeshExtra
+{
+	unsigned int salt;
+
+	unsigned int linksFreeList;
+	dtBorderLink* links;
+
+	dtMeshExtraHeader* header;
+	unsigned char* data;
+	int dataSize;
+
+	float* vertices;
+	int* splits;
+	unsigned short* neis;
+	unsigned int* linkIndices;
+};
+
 /// Get flags for edge in detail triangle.
 /// @param[in]	triFlags		The flags for the triangle (last component of detail vertices above).
 /// @param[in]	edgeIndex		The index of the first vertex of the edge. For instance, if 0,
@@ -361,20 +397,25 @@ public:
 	const dtNavMeshParams* getParams() const;
 
 	/// Adds a tile to the navigation mesh.
-	///  @param[in]		data		Data for the new tile mesh. (See: #dtCreateNavMeshData)
-	///  @param[in]		dataSize	Data size of the new tile mesh.
-	///  @param[in]		flags		Tile flags. (See: #dtTileFlags)
-	///  @param[in]		lastRef		The desired reference for the tile. (When reloading a tile.) [opt] [Default: 0]
-	///  @param[out]	result		The tile reference. (If the tile was succesfully added.) [opt]
+	///  @param[in]		data			Data for the new tile mesh. (See: #dtCreateNavMeshData)
+	///  @param[in]		dataSize		Data size of the new tile mesh.
+	///  @param[in]		extraData		Extra Data for the new tile mesh. (See: #dtCreateNavMeshExtraData)
+	///  @param[in]		extraDataSize	Extra Data size of the new tile mesh.
+	///  @param[in]		flags			Tile flags. (See: #dtTileFlags)
+	///  @param[in]		lastRef			The desired reference for the tile. (When reloading a tile.) [opt] [Default: 0]
+	///  @param[out]	result			The tile reference. (If the tile was succesfully added.) [opt]
 	/// @return The status flags for the operation.
-	dtStatus addTile(unsigned char* data, int dataSize, int flags, dtTileRef lastRef, dtTileRef* result);
+	dtStatus addTile(unsigned char* data, int dataSize, int flags, 
+					dtTileRef lastRef, dtTileRef* result, 
+					unsigned char* extraData = nullptr, int extraDataSize = 0);
 	
 	/// Removes the specified tile from the navigation mesh.
 	///  @param[in]		ref			The reference of the tile to remove.
 	///  @param[out]	data		Data associated with deleted tile.
 	///  @param[out]	dataSize	Size of the data associated with deleted tile.
 	/// @return The status flags for the operation.
-	dtStatus removeTile(dtTileRef ref, unsigned char** data, int* dataSize);
+	dtStatus removeTile(dtTileRef ref, unsigned char** data, int* dataSize,
+						unsigned char** extraData = nullptr, int* extraDataSize = nullptr);
 
 	/// @}
 
@@ -674,6 +715,49 @@ private:
 #endif
 
 	friend class dtNavMeshQuery;
+
+private:
+	dtMeshExtra* m_extras;				///< List of extras.
+	int extraVertCount;
+public:
+	dtPolyRef getExtraRef(const dtMeshExtra* extra) const;
+	dtPolyRef getBorderRef(const dtMeshExtra* extra, const unsigned int& ib) const;
+	bool findBorderPortalVert(const dtMeshExtra* extra, const int& ivert, const dtMeshExtra* nextra, bool bIgnoreFlag, dtPolyRef& nborder, int& nvert) const;
+	bool findNeibBorderPortalVert(const dtMeshExtra* extra, const int& ivert, dtPolyRef& nborder, int& nvert) const;
+	bool findBorderPortalVert(const dtMeshExtra* extra, const int& ivert, const int& tileX, const int& tileY, bool bIgnoreFlag, dtPolyRef& nborder, int& nvert) const;
+    bool findBorderPortalVert(const int& iextra, const int& ivert, bool& bPolyLinked, dtPolyRef& nborder, int& nvert) const;
+    
+	dtMeshTile* getTileByIndex(const int& i);
+	dtMeshExtra* getExtraByIndex(const int& i);
+	dtMeshExtra* getExtra(const dtPolyRef& ref);
+	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
+	bool isVectexOverlap(const float* v0, const float* v1, const float& walkableClimb) const;
+	dtPolyRef getNeibPolyRef(const dtMeshTile* tile, const dtPoly* poly, const unsigned char& edgeIndex) const;
+	const dtLink* getNeibPolyExtLink(const dtMeshTile* tile, const dtPoly* poly, const unsigned char& edgeIndex) const;
+private:
+    inline int getDirOffsetX(char dir) const
+    {
+        const char offset[4] = { -1, 0, 1, 0, };
+        return offset[dir & 0x03];
+    }
+    inline char getDirOffsetY(char dir) const
+    {
+        const char offset[4] = { 0, 1, 0, -1 };
+        return offset[dir & 0x03];
+    }
+	bool walkBorder(const int& extraIdx, const int& borderIdx, const int& vertIdx,
+                    const int& maxVertPerExtra, unsigned char* flags,
+                    float* verts, int& vertCount) const;
+    bool walkMissing(int& iextra, int& iborder, int& ivert,
+                     const int& maxVertPerExtra, unsigned char* flags,
+                     float* verts, int& vertCount) const;
+    void getTileOffset(const int& side, int& dx, int& dy) const;
+	dtStatus AddExtra(const dtMeshTile* tile, unsigned char* extraData, int extraDataSize);
+	dtStatus RemoveExtra(const unsigned char& tileIndex, unsigned char** extraData, int* extraDataSize);
+	int getTileCountAt(const int x, const int y) const;
+    const dtLink* getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const dtPolyRef& tpolyRef, const unsigned char& vertIdx) const;
+	void createBorderLink(const int& tileIndex, const int& iborder, const int& ivert, unsigned char mask);
+	const dtLink* getBorderEdgeLink(const int& itile, const int& ivert) const;
 };
 
 /// Allocates a navigation mesh object using the Detour allocator.

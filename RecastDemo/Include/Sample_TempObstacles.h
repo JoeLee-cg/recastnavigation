@@ -77,6 +77,7 @@ public:
 	void getTilePos(const float* pos, int& tx, int& ty);
 	
 	void renderCachedTile(const int tx, const int ty, const int type);
+	void renderTempObstaclesTile(const int tx, const int ty, const int type);
 	void renderCachedTileOverlay(const int tx, const int ty, double* proj, double* model, int* view);
 
 	void addTempObstacle(const float* pos);

@@ -42,7 +42,7 @@ inline int computeTileHash(int x, int y, const int mask)
 
 struct NavMeshTileBuildContext
 {
-	inline NavMeshTileBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), lmesh(0), alloc(a) {}
+	inline NavMeshTileBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), tbset(0), lmesh(0), alloc(a) {}
 	inline ~NavMeshTileBuildContext() { purge(); }
 	void purge()
 	{
@@ -50,11 +50,14 @@ struct NavMeshTileBuildContext
 		layer = 0;
 		dtFreeTileCacheContourSet(alloc, lcset);
 		lcset = 0;
+		dtFreeTileCacheBorderSet(alloc, tbset);
+		tbset = 0;
 		dtFreeTileCachePolyMesh(alloc, lmesh);
 		lmesh = 0;
 	}
 	struct dtTileCacheLayer* layer;
 	struct dtTileCacheContourSet* lcset;
+	struct dtTileCacheBorderSet* tbset;
 	struct dtTileCachePolyMesh* lmesh;
 	struct dtTileCacheAlloc* alloc;
 };
@@ -716,6 +719,11 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 									  m_params.maxSimplificationError, *bc.lcset);
 	if (dtStatusFailed(status))
 		return status;
+
+	bc.tbset = dtAllocTileCacheBorderSet(m_talloc);
+	if (!bc.tbset)
+		return DT_FAILURE | DT_OUT_OF_MEMORY;
+	status = dtBuildTileCacheBorders(m_talloc, *bc.layer, *bc.lcset, walkableClimbVx, *bc.tbset);
 	
 	bc.lmesh = dtAllocTileCachePolyMesh(m_talloc);
 	if (!bc.lmesh)
@@ -763,6 +771,23 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	if (!dtCreateNavMeshData(&params, &navData, &navDataSize))
 		return DT_FAILURE;
 
+	unsigned char* extraData(nullptr);
+	int extraDataSize(0);
+	if (bc.tbset)
+	{
+		dtNavMeshExtraCreateParams extraParams;
+		memset(&extraParams, 0, sizeof(extraParams));
+		extraParams.linkCount = bc.tbset->linkCount;
+		extraParams.nborders = bc.tbset->nborders;
+		extraParams.splits = bc.tbset->splits;
+		extraParams.vertices = bc.tbset->vertices;
+        extraParams.cs = m_params.cs;
+        extraParams.ch = m_params.ch;
+        dtVcopy(extraParams.bmin, tile->header->bmin);
+        dtVcopy(extraParams.bmax, tile->header->bmax);
+		dtCreateNavMeshExtraData(&params, &extraParams, &extraData, &extraDataSize);
+	}
+
 	// Remove existing tile.
 	navmesh->removeTile(navmesh->getTileRefAt(tile->header->tx,tile->header->ty,tile->header->tlayer),0,0);
 
@@ -770,7 +795,7 @@ dtStatus dtTileCache::buildNavMeshTile(const dtCompressedTileRef ref, dtNavMesh*
 	if (navData)
 	{
 		// Let the navmesh own the data.
-		status = navmesh->addTile(navData,navDataSize,DT_TILE_FREE_DATA,0,0);
+		status = navmesh->addTile(navData, navDataSize, DT_TILE_FREE_DATA, 0, 0, extraData, extraDataSize);
 		if (dtStatusFailed(status))
 		{
 			dtFree(navData);
