@@ -727,9 +727,9 @@ public:
 	bool findBorderPortalVert(const dtMeshExtra* extra, const int& ivert, const int& tileX, const int& tileY, bool bIgnoreFlag, dtPolyRef& nborder, int& nvert) const;
     bool findBorderPortalVert(const int& iextra, const int& ivert, bool& bPolyLinked, dtPolyRef& nborder, int& nvert) const;
     
-	dtMeshTile* getTileByIndex(const int& i);
-	dtMeshExtra* getExtraByIndex(const int& i);
-	dtMeshExtra* getExtra(const dtPolyRef& ref);
+	dtMeshTile* getTileByIndex(const int& i) const;
+	dtMeshExtra* getExtraByIndex(const int& i) const;
+	dtMeshExtra* getExtra(const dtPolyRef& ref) const;
 	bool getBorders(float*& vertices, int& vertCount, int*& borders, int& borderCount) const;
 	bool isVectexOverlap(const float* v0, const float* v1, const float& walkableClimb) const;
 	dtPolyRef getNeibPolyRef(const dtMeshTile* tile, const dtPoly* poly, const unsigned char& edgeIndex) const;
@@ -754,7 +754,6 @@ private:
     void getTileOffset(const int& side, int& dx, int& dy) const;
 	dtStatus AddExtra(const dtMeshTile* tile, unsigned char* extraData, int extraDataSize);
 	dtStatus RemoveExtra(const unsigned char& tileIndex, unsigned char** extraData, int* extraDataSize);
-	int getTileCountAt(const int x, const int y) const;
     const dtLink* getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const dtPolyRef& tpolyRef, const unsigned char& vertIdx) const;
 	void createBorderLink(const int& tileIndex, const int& iborder, const int& ivert, unsigned char mask);
 	const dtLink* getBorderEdgeLink(const int& itile, const int& ivert) const;

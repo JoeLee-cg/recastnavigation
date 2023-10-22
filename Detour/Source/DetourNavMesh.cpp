@@ -1644,7 +1644,7 @@ bool dtNavMesh::findBorderPortalVert(const dtMeshExtra* extra, const int& ivert,
 				continue;
 
 			const float* evert(&nextra->vertices[k * 3]);
-			float dx(extra->header->cs), dz(extra->header->cs);
+			float dx(extra->header->cs * 0.5f), dz(extra->header->cs * 0.5f);
 			if (dir == 0 || dir == 2)
 				dx = 0.0f;
 			else if (dir == 1 || dir == 3)
@@ -1866,7 +1866,7 @@ bool dtNavMesh::isVectexOverlap(const float* v0, const float* v1, const float& w
 	return dtAbs(v0[0] - v1[0]) < 0.01f && dtAbs(v0[1] - v1[1]) < walkableClimb && dtAbs(v0[2] - v1[2]) < 0.01f;
 }
 
-dtMeshTile* dtNavMesh::getTileByIndex(const int& i)
+dtMeshTile* dtNavMesh::getTileByIndex(const int& i) const
 {
 	if (i >= 0 && i < getMaxTiles())
 	{
@@ -1877,7 +1877,7 @@ dtMeshTile* dtNavMesh::getTileByIndex(const int& i)
 	return nullptr;
 }
 
-dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i)
+dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i) const
 {
 	if (i >= 0 && i < getMaxTiles())
 	{
@@ -1888,7 +1888,7 @@ dtMeshExtra* dtNavMesh::getExtraByIndex(const int& i)
 	return nullptr;
 }
 
-dtMeshExtra* dtNavMesh::getExtra(const dtPolyRef& ref)
+dtMeshExtra* dtNavMesh::getExtra(const dtPolyRef& ref) const
 {
 	if (ref == 0)
 		return nullptr;
@@ -2163,24 +2163,6 @@ dtStatus dtNavMesh::RemoveExtra(const unsigned char& tileIndex, unsigned char** 
 		memset(extra, 0, sizeof(dtMeshExtra));
 	}
 	return DT_SUCCESS;
-}
-
-int dtNavMesh::getTileCountAt(const int x, const int y) const
-{
-	int n(0);
-	int h = computeTileHash(x, y, m_tileLutMask);
-	dtMeshTile* tile = m_posLookup[h];
-	while (tile)
-	{
-		if (tile->header &&
-			tile->header->x == x &&
-			tile->header->y == y)
-		{
-			++n;
-		}
-		tile = tile->next;
-	}
-	return n;
 }
 
 const dtLink* dtNavMesh::getPolyLinkInTile(const dtMeshTile* tile, const dtPoly& poly, const dtPolyRef& tpolyRef, const unsigned char& vertIdx) const

@@ -1391,6 +1391,33 @@ void Sample_TempObstacles::renderCachedTileOverlay(const int tx, const int ty, d
 {
 	if (m_tileCache)
 		drawDetailOverlay(m_tileCache, tx, ty, proj, model, view);
+
+	char text[128];
+	int ntiles(m_navMesh->getMaxTiles());
+	for (int j(0); j < ntiles; ++j)
+	{
+		dtMeshExtra* extra(m_navMesh->getExtraByIndex(j));
+		if (!extra)
+			continue;
+		if (extra->header->x != tx || extra->header->y != ty)
+			continue;
+		for (int k(0), i(0); k < extra->header->borderCount; ++k)
+		{
+			for (; i < extra->splits[k]; ++i)
+			{
+				float fx = extra->vertices[i * 3 + 0];
+				float fy = extra->vertices[i * 3 + 1];
+				float fz = extra->vertices[i * 3 + 2];
+				m_ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+				GLdouble x, y, z;
+				if (gluProject((GLdouble)fx, (GLdouble)fy, (GLdouble)fz, model, proj, view, &x, &y, &z))
+				{
+					snprintf(text, 128, "(%d,%d)/%d(%.5f,%.5f,%.5f)", j, k, i, fx, fy, fz);
+					imguiDrawText((int)x, (int)y-25, IMGUI_ALIGN_CENTER, text, imguiRGBA(0,0,0,220));
+				}
+			}
+		}
+	}
 }
 
 void Sample_TempObstacles::handleRenderOverlay(double* proj, double* model, int* view)
@@ -1638,14 +1665,23 @@ bool Sample_TempObstacles::handleBuild()
 		m_tool->init(this);
 	initToolStates(this);
 
-	//float pos[3]{58.7448463f, -2.19668055f, 11.5687246f};
-	//float pos[3]{56.4841690, -2.74019456, 10.2089949};
-	float pos[3]{57.1909370, -2.69959164, 10.2175446};
-	//float pos[3]{58.1213150, -2.20300364, 11.7394905};
-	//float pos[3]{58.4881783, -1.27281189, 14.2272034};
-	addTempObstacle(pos);
-	//float pos1[3]{54.4035683, -2.45636177, 13.8492994};
+	//float pos[3] = {58.7448463f, -2.19668055f, 11.5687246f};
+	//float pos[3] = {56.4841690, -2.74019456, 10.2089949};
+	//float pos[3] = {57.1909370, -2.69959164, 10.2175446};
+	//float pos[3] = {58.1213150, -2.20300364, 11.7394905};
+	//float pos[3] = {58.4881783, -1.27281189, 14.2272034};
+
+	//float pos0[3] = {56.6835022, -2.29753113, 12.4253578};
+	//float pos1[3] = {58.5515060, -2.40190125, 10.7828922};
 	//addTempObstacle(pos1);
+	//addTempObstacle(pos0);
+
+	float pos0[3] = {42.6472168, -2.17915630, 12.3505487};
+	float pos1[3] = {56.6835022, -2.79753113, 12.4253578};
+	float pos2[3] = {58.5515060, -2.90190125, 10.7828922};
+	//addTempObstacle(pos0);
+	addTempObstacle(pos1);
+	//addTempObstacle(pos2);
 	return true;
 }
 

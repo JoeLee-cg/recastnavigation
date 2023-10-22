@@ -1100,14 +1100,14 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 
 					int vidx(v[0] + v[2] * tw);
                     unsigned char lh(v[1]);
-					if (flags[vidx] & 0x80)
-						lh = flags[vidx] >> 16;
-					else if (bPortal)
-					{
-						bool shouldRemove(false);
-						lh = getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2], walkableClimb, shouldRemove);
-					}
-					else continue;
+					//if (flags[vidx] & 0x80)
+					//	lh = flags[vidx] >> 16;
+					//else if (bPortal)
+					//{
+					//	bool shouldRemove(false);
+					//	lh = getCornerHeight(layer, (int)v[0], (int)v[1], (int)v[2], walkableClimb, shouldRemove);
+					//}
+					//else continue;
 
 					if (v[0] == 0 || v[0] == w || v[2] == 0 || v[2] == h)
 						link |= 0x20;
@@ -2334,7 +2334,7 @@ dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const fl
 					if (tx >= 0 && tx < w && tz >= 0 && tz < h)
 					{
 						layer.cons[tx + tz * w] &= ~(0x01 << ((dir + 2) & 0x03));
-						layer.cons[tx + tz * w] &= ~(0x01 << (((dir + 2) & 0x03) + 4));
+						layer.cons[tx + tz * w] &= (~(0x01 << (((dir + 2) & 0x03) + 4)));
 					}
 				}
 			}

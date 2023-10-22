@@ -546,6 +546,10 @@ dtStatus dtTileCache::update(const float /*dt*/, dtNavMesh* navmesh,
 				// Find touched tiles.
 				float bmin[3], bmax[3];
 				getObstacleBounds(ob, bmin, bmax);
+				bmin[0] -= 1.f;
+				bmin[2] -= 1.f;
+				bmax[0] += 1.f;
+				bmax[2] += 1.f;
 
 				int ntouched = 0;
 				queryTiles(bmin, bmax, ob->touched, &ntouched, DT_MAX_TOUCHED_TILES);
