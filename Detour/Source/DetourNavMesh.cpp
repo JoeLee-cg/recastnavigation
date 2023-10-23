@@ -2287,7 +2287,7 @@ const dtLink* dtNavMesh::getBorderEdgeLink(const int& itile, const int& ivert) c
 	const dtMeshExtra* extra(&m_extras[itile]);
 	const float* vert(&extra->vertices[ivert * 3]);
 
-	const float halfExtents[3] {0.01f, 0.01f, 0.01f};
+	const float halfExtents[3] = {0.01f, 0.01f, 0.01f};
 	float bmin[3], bmax[3];
 	dtVsub(bmin, vert, halfExtents);
 	dtVadd(bmax, vert, halfExtents);

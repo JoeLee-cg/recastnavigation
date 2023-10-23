@@ -820,7 +820,7 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 		bc.tcset = dtAllocTileCacheBorderSet(talloc);
 		if (!bc.tcset)
 			return;
-		status = dtBuildTileCacheBorders(talloc, *bc.layer, *bc.lcset, walkableClimbVx, *bc.tcset);
+		status = dtBuildTileCacheBorders(talloc, *bc.layer, *bc.lcset, *bc.tcset);
 		if (dtStatusFailed(status))
 			return;
 

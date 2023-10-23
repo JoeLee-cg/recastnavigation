@@ -978,7 +978,6 @@ public:
 dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
                                  dtTileCacheLayer& layer,
                                  const dtTileCacheContourSet& lcset,
-								 const int& walkableClimb,
                                  dtTileCacheBorderSet& tbset)
 {
 	dtAssert(alloc);
