@@ -449,7 +449,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		header.hmin = (unsigned short)layer->hmin;
 		header.hmax = (unsigned short)layer->hmax;
 
-		dtStatus status = dtBuildTileCacheLayer(&comp, &header, layer->heights, layer->areas, layer->cons,
+		dtStatus status = dtBuildTileCacheLayer(&comp, &header, layer->heights, layer->extraHeights, layer->areas, layer->cons,
 												&tile->data, &tile->dataSize);
 		if (dtStatusFailed(status))
 		{
@@ -1670,18 +1670,29 @@ bool Sample_TempObstacles::handleBuild()
 	//float pos[3] = {57.1909370, -2.69959164, 10.2175446};
 	//float pos[3] = {58.1213150, -2.20300364, 11.7394905};
 	//float pos[3] = {58.4881783, -1.27281189, 14.2272034};
+	//addTempObstacle(pos);
 
 	//float pos0[3] = {56.6835022, -2.29753113, 12.4253578};
 	//float pos1[3] = {58.5515060, -2.40190125, 10.7828922};
 	//addTempObstacle(pos1);
 	//addTempObstacle(pos0);
 
-	float pos0[3] = {42.6472168, -2.17915630, 12.3505487};
-	float pos1[3] = {56.6835022, -2.79753113, 12.4253578};
-	float pos2[3] = {58.5515060, -2.90190125, 10.7828922};
+	//float pos0[3] = {42.6472168, -2.17915630, 12.3505487};
 	//addTempObstacle(pos0);
-	addTempObstacle(pos1);
+	//float pos1[3] = {56.6835022, -2.79753113, 12.4253578};
+	//addTempObstacle(pos1);
+	//float pos2[3] = {58.5515060, -2.90190125, 10.7828922};
 	//addTempObstacle(pos2);
+
+	//float pos[3] = {0.958605766, -2.86292553, 10.1905499};
+	//addTempObstacle(pos);
+
+	float pos0[3] = {43.8531494, -1.72279966, 10.5242290};
+	addTempObstacle(pos0);
+	float pos1[3] = {41.5657578, -2.05344534, 11.8093843};
+	addTempObstacle(pos1);
+	float pos2[3] = {43.2372398, -1.60974967, 10.4171171};
+	addTempObstacle(pos2);
 	return true;
 }
 

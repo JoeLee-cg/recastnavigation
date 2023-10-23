@@ -534,6 +534,15 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 		}
 		memset(layer->heights, 0xff, gridSize);
 
+		const int extraHeightSize = sizeof(unsigned char) * (lw * 2 + lh * 2 + 4);
+		layer->extraHeights = (unsigned char*)rcAlloc(extraHeightSize, RC_ALLOC_PERM);
+		if (!layer->extraHeights)
+		{
+			ctx->log(RC_LOG_ERROR, "rcBuildHeightfieldLayers: Out of memory 'extraHeights' (%d).", extraHeightSize);
+			return false;
+		}
+		memset(layer->extraHeights, 0xff, extraHeightSize);
+
 		layer->areas = (unsigned char*)rcAlloc(gridSize, RC_ALLOC_PERM);
 		if (!layer->areas)
 		{
@@ -646,6 +655,50 @@ bool rcBuildHeightfieldLayers(rcContext* ctx, const rcCompactHeightfield& chf,
 			}
 		}
 		
+		const int td[4][3] = {{1, 0, lw + 1}, {0, 1, lh + 1}, {-1, 0, lw + 1}, {0, -1, lh + 1}};
+		int tw(lw + 2), th(lh + 2), extraHeightCount(0), tx(0), ty(0);
+		for (int d(0); d < 4; ++d)
+		{
+			const int gw(td[d][0]), gh(td[d][1]);
+			for (int ti(0); ti < td[d][2]; ++ti, tx += gw, ty += gh)
+			{
+				unsigned char h(0xff);
+
+				const int cx = borderSize + tx - 1;
+				const int cy = borderSize + ty - 1;
+				const rcCompactCell& c = chf.cells[cx+cy*w];
+				for (int j = (int)c.index, nj = (int)(c.index+c.count); j < nj; ++j)
+				{
+					const rcCompactSpan& s = chf.spans[j];
+					if (chf.areas[j] == RC_NULL_AREA)
+						continue;
+
+					unsigned char th = (unsigned char)(s.y - hmin);
+					bool bFound(false);
+					for (int dir = 0; dir < 4; ++dir)
+					{
+						if (rcGetCon(s, dir) != RC_NOT_CONNECTED)
+						{
+							const int ax = cx + rcGetDirOffsetX(dir);
+							const int ay = cy + rcGetDirOffsetY(dir);
+							const int ai = (int)chf.cells[ax + ay * w].index + rcGetCon(s, dir);
+							unsigned char alid = srcReg[ai] != 0xff ? regs[srcReg[ai]].layerId : 0xff;
+							if (chf.areas[ai] != RC_NULL_AREA && i == alid)
+							{
+								bFound = true;
+								const rcCompactSpan& as = chf.spans[ai];
+								if (as.y > hmin)
+									th = rcMax(th, (unsigned char)(as.y - hmin));
+							}
+						}
+					}
+					if (bFound)
+						h = th;
+				}
+				layer->extraHeights[extraHeightCount++] = h;
+			}
+		}
+
 		if (layer->minx > layer->maxx)
 			layer->minx = layer->maxx = 0;
 		if (layer->miny > layer->maxy)

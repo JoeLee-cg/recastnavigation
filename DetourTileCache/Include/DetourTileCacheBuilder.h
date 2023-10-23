@@ -45,6 +45,7 @@ struct dtTileCacheLayer
 	dtTileCacheLayerHeader* header;
 	unsigned char regCount;					///< Region count.
 	unsigned char* heights;
+	unsigned char* extraHeights;
 	unsigned char* areas;
 	unsigned char* cons;
 	unsigned char* regs;
@@ -116,6 +117,7 @@ struct dtTileCacheCompressor
 dtStatus dtBuildTileCacheLayer(dtTileCacheCompressor* comp,
 							   dtTileCacheLayerHeader* header,
 							   const unsigned char* heights,
+							   const unsigned char* extraHeights,
 							   const unsigned char* areas,
 							   const unsigned char* cons,
 							   unsigned char** outData, int* outDataSize);
