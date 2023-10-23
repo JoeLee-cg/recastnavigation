@@ -1123,7 +1123,6 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
                     unsigned char* nv(&temp.verts[i * 4]);
                     unsigned char nei(v[3] & 0x0f), nnei(nv[3] & 0x0f);
                     unsigned char link(nei);
-					bool bPortal(false);
                     if (nei == 0x0f && nnei != 0x0f)
                     {
                         link = 0x80 | nnei;
@@ -1143,7 +1142,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 					dst[2] = v[2];
 					dst[3] = link;
 				}
-				//dtAssert(cont.nverts > 1);
+				dtAssert(cont.nverts > 1);
 				if (cont.nverts > 2)
 				{
 					tnvert += cont.nverts;
