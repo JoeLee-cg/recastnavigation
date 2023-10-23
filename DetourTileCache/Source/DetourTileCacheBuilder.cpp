@@ -1003,7 +1003,7 @@ dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
 	}
 
 	int contFlagSize(maxReg * maxContVert * 3);
-	dtFixedArray<unsigned short> contVerts(alloc,  contFlagSize);
+	dtFixedArray<unsigned short> contVerts(alloc, contFlagSize);
 	if (!contVerts)
 		return DT_FAILURE | DT_OUT_OF_MEMORY;
 	memset(contVerts, 0, sizeof(unsigned short) * contFlagSize);
