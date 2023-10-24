@@ -245,7 +245,7 @@ private:
 	ObstacleRequest m_reqs[MAX_REQUESTS];
 	int m_nreqs;
 	
-	static const int MAX_UPDATE = 64;
+	static const int MAX_UPDATE = 8196;
 	dtCompressedTileRef m_update[MAX_UPDATE];
 	int m_nupdate;
 };

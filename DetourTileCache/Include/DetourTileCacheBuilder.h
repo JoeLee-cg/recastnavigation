@@ -24,6 +24,7 @@
 
 static const int DT_TILECACHE_MAGIC = 'D'<<24 | 'T'<<16 | 'L'<<8 | 'R'; ///< 'DTLR';
 static const int DT_TILECACHE_VERSION = 1;
+static const int DT_TILECACHE_EXT_HEIGHTS_VERSION = 2;
 
 static const unsigned char DT_TILECACHE_NULL_AREA = 0;
 static const unsigned char DT_TILECACHE_WALKABLE_AREA = 63;
@@ -45,6 +46,7 @@ struct dtTileCacheLayer
 	dtTileCacheLayerHeader* header;
 	unsigned char regCount;					///< Region count.
 	unsigned char* heights;
+	short* extraHeights;
 	unsigned char* areas;
 	unsigned char* cons;
 	unsigned char* regs;
@@ -62,6 +64,14 @@ struct dtTileCacheContourSet
 {
 	int nconts;
 	dtTileCacheContour* conts;
+};
+
+struct dtTileCacheBorderSet
+{
+	int nborders;
+	int linkCount;
+	int* splits;
+	unsigned short* vertices;
 };
 
 struct dtTileCachePolyMesh
@@ -108,6 +118,7 @@ struct dtTileCacheCompressor
 dtStatus dtBuildTileCacheLayer(dtTileCacheCompressor* comp,
 							   dtTileCacheLayerHeader* header,
 							   const unsigned char* heights,
+							   const short* extraHeights,
 							   const unsigned char* areas,
 							   const unsigned char* cons,
 							   unsigned char** outData, int* outDataSize);
@@ -121,16 +132,25 @@ dtStatus dtDecompressTileCacheLayer(dtTileCacheAlloc* alloc, dtTileCacheCompress
 dtTileCacheContourSet* dtAllocTileCacheContourSet(dtTileCacheAlloc* alloc);
 void dtFreeTileCacheContourSet(dtTileCacheAlloc* alloc, dtTileCacheContourSet* cset);
 
+dtTileCacheBorderSet* dtAllocTileCacheBorderSet(dtTileCacheAlloc* alloc);
+void dtFreeTileCacheBorderSet(dtTileCacheAlloc* alloc, dtTileCacheBorderSet* cset);
+
 dtTileCachePolyMesh* dtAllocTileCachePolyMesh(dtTileCacheAlloc* alloc);
 void dtFreeTileCachePolyMesh(dtTileCacheAlloc* alloc, dtTileCachePolyMesh* lmesh);
 
 dtStatus dtMarkCylinderArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
 							const float* pos, const float radius, const float height, const unsigned char areaId);
+dtStatus dtMarkCylinderAreaEx(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
+							const float* pos, const float radius, const float height, const unsigned char areaId);
 
 dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
 					   const float* bmin, const float* bmax, const unsigned char areaId);
+dtStatus dtMarkBoxAreaEx(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
+					   const float* bmin, const float* bmax, const unsigned char areaId);
 
 dtStatus dtMarkBoxArea(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
+					   const float* center, const float* halfExtents, const float* rotAux, const unsigned char areaId);
+dtStatus dtMarkBoxAreaEx(dtTileCacheLayer& layer, const float* orig, const float cs, const float ch,
 					   const float* center, const float* halfExtents, const float* rotAux, const unsigned char areaId);
 
 dtStatus dtBuildTileCacheRegions(dtTileCacheAlloc* alloc,
@@ -141,6 +161,10 @@ dtStatus dtBuildTileCacheContours(dtTileCacheAlloc* alloc,
 								  dtTileCacheLayer& layer,
 								  const int walkableClimb, 	const float maxError,
 								  dtTileCacheContourSet& lcset);
+dtStatus dtBuildTileCacheBorders(dtTileCacheAlloc* alloc,
+								 dtTileCacheLayer& layer,
+                                 const dtTileCacheContourSet& lcset,
+								 dtTileCacheBorderSet& tbset);
 
 dtStatus dtBuildTileCachePolyMesh(dtTileCacheAlloc* alloc,
 								  dtTileCacheContourSet& lcset,

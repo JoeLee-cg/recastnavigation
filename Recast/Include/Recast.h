@@ -395,6 +395,7 @@ struct rcHeightfieldLayer
 	unsigned char* heights;		///< The heightfield. [Size: width * height]
 	unsigned char* areas;		///< Area ids. [Size: Same as #heights]
 	unsigned char* cons;		///< Packed neighbor connection information. [Size: Same as #heights]
+	short* extraHeights;
 };
 
 /// Represents a set of heightfield layers.

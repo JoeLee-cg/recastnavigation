@@ -430,7 +430,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		// Store header
 		dtTileCacheLayerHeader header;
 		header.magic = DT_TILECACHE_MAGIC;
-		header.version = DT_TILECACHE_VERSION;
+		header.version = DT_TILECACHE_EXT_HEIGHTS_VERSION;
 		
 		// Tile layer location in the navmesh.
 		header.tx = tx;
@@ -449,7 +449,7 @@ int Sample_TempObstacles::rasterizeTileLayers(
 		header.hmin = (unsigned short)layer->hmin;
 		header.hmax = (unsigned short)layer->hmax;
 
-		dtStatus status = dtBuildTileCacheLayer(&comp, &header, layer->heights, layer->areas, layer->cons,
+		dtStatus status = dtBuildTileCacheLayer(&comp, &header, layer->heights, layer->extraHeights, layer->areas, layer->cons,
 												&tile->data, &tile->dataSize);
 		if (dtStatusFailed(status))
 		{
@@ -502,19 +502,257 @@ void drawTiles(duDebugDraw* dd, dtTileCache* tc)
 
 }
 
+void drawBorders(BuildContext* ctx, duDebugDraw* dd, dtNavMesh* mesh, const int& tx, const int& ty)
+{
+	if(!mesh)
+		return;
+
+    int ntiles(mesh->getMaxTiles());
+	const unsigned int rcolor(duRGBA(255, 0, 0, 255));
+	const unsigned int gcolor(duRGBA(0, 255, 0, 255));
+	const unsigned int bcolor(duRGBA(0, 0, 255, 255));
+	const unsigned int ycolor(duRGBA(255, 255, 0, 255));
+	const unsigned int pcolor(duRGBA(255, 0, 255, 255));
+	const unsigned int ocolor(duRGBA(0, 255, 255, 255));
+	const unsigned int wcolor(duRGBA(0, 0, 0, 255));
+	const unsigned int bbcolor(duRGBA(255, 255, 255, 255));
+	const unsigned int btcolor(duRGBA(10, 100, 80, 255));
+	const unsigned int bqcolor(duRGBA(100, 10, 80, 255));
+
+	float* vertices(nullptr);
+	int* borders(nullptr);
+	int nvert(0), nborder(0);
+	mesh->getBorders(vertices, nvert, borders, nborder);
+	dd->begin(DU_DRAW_LINES, 2.0f);
+	for (int i(0); i < nborder; ++i)
+	{
+		for (int p(borders[i] - 1), j(i == 0 ? 0 : borders[i - 1]); j < borders[i]; p = j++)
+		{
+			//if (i != 63)
+			//	continue;
+			//if (p == borders[i] - 1)
+			//	continue;
+			float pfx = vertices[p * 3 + 0];
+			float pfy = vertices[p * 3 + 1];
+			float pfz = vertices[p * 3 + 2];
+			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", pfx, pfy, pfz);
+			dd->vertex(pfx, pfy, pfz, p == borders[i] - 1 ? gcolor : rcolor);
+
+			float fx = vertices[j * 3 + 0];
+			float fy = vertices[j * 3 + 1];
+			float fz = vertices[j * 3 + 2];
+			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+            dd->vertex(fx, fy, fz, p == borders[i] - 1 ? gcolor : rcolor);
+		}
+	}
+	dd->end();
+
+//	dd->begin(DU_DRAW_POINTS, 5.0f);
+//	for (int i(0), j(0); i < nborder; ++i)
+//	{
+//		for (; j < borders[i]; j++)
+//		{
+//            if (j != 423 && j!= 424)
+//                continue;
+//            
+//			float pfx = vertices[j * 3 + 0];
+//			float pfy = vertices[j * 3 + 1];
+//			float pfz = vertices[j * 3 + 2];
+//			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", pfx, pfy, pfz);
+//			dd->vertex(pfx, pfy, pfz, j == 423 ? gcolor : j == 424 ? bcolor : rcolor);
+//		}
+//	}
+//	dd->end();
+//    dd->begin(DU_DRAW_POINTS, 10.0f);
+//    for (int j(0); j < ntiles; ++j)
+//    {
+//        dtMeshExtra* extra(mesh->getExtraByIndex(j));
+//        if (!extra)
+//            continue;
+//        if (extra->header->x != 3 || extra->header->y != 2 || extra->header->layer != 1)
+//            continue;
+//        for (int i(0); i < extra->header->vertCount; ++i)
+//        {
+//            if (i >= extra->splits[1] || i < extra->splits[0])
+//                continue;
+//            float fx = extra->vertices[i * 3 + 0];
+//            float fy = extra->vertices[i * 3 + 1];
+//            float fz = extra->vertices[i * 3 + 2];
+//            ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+//            dd->vertex(fx, fy, fz, (extra->neis[i] & 0x80) ? gcolor : (extra->neis[i] & 0x40) ? bcolor : rcolor);
+////            dd->vertex(fx, fy, fz, i == 0 ? gcolor : i == 1 ? bcolor : rcolor);
+//        }
+//    }
+//    dd->end();
+	dd->begin(DU_DRAW_POINTS, 10.0f);
+    int outPolyIdx(0);
+    unsigned char outVertIdx(0);
+	for (int j(0); j < ntiles; ++j)
+	{
+		dtMeshExtra* extra(mesh->getExtraByIndex(j));
+		if (!extra)
+			continue;
+		if (extra->header->x != tx || extra->header->y != ty)
+			continue;
+		for (int i(0); i < extra->header->vertCount; ++i)
+		{
+			float fx = extra->vertices[i * 3 + 0];
+			float fy = extra->vertices[i * 3 + 1];
+			float fz = extra->vertices[i * 3 + 2];
+			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+			if (extra->linkIndices[i] != DT_NULL_LINK)
+			{
+				if (extra->links[extra->linkIndices[i]].borderId == 0)
+				{
+					if (extra->links[extra->linkIndices[i]].flags & 0x80)
+						dd->vertex(fx, fy, fz, gcolor);
+					else if (extra->links[extra->linkIndices[i]].flags & 0x40)
+						dd->vertex(fx, fy, fz, btcolor);
+					else
+						dd->vertex(fx, fy, fz, bqcolor);
+				}
+				else if (extra->links[extra->linkIndices[i]].flags & 0x80)
+					dd->vertex(fx, fy, fz, ocolor);
+				else
+					dd->vertex(fx, fy, fz, wcolor);
+			}
+			else if (extra->neis[i] & 0x80)
+			{
+				dd->vertex(fx, fy, fz, bcolor);
+			}
+			else if (extra->neis[i] & 0x40)
+			{
+				dd->vertex(fx, fy, fz, ycolor);
+			}
+			else if (extra->neis[i] & 0xc0)
+			{
+				dd->vertex(fx, fy, fz, pcolor);
+			}
+			else
+			{
+				dd->vertex(fx, fy, fz, rcolor);
+			}
+
+			//if (mesh->isBorderLinkValid(extra->linkIndices[i]))
+			//{
+			//	if (extra->links[extra->linkIndices[i]].borderId == 0)
+			//		dd->vertex(fx, fy, fz, gcolor);
+			//	else
+			//	{
+			//		dtMeshExtra* nextra = mesh->getExtra(extra->links[extra->linkIndices[i]].borderId);
+			//		int ni(extra->links[extra->linkIndices[i]].vertIndex);
+			//		float nfx = nextra->vertices[ni * 3 + 0];
+			//		float nfy = nextra->vertices[ni * 3 + 1];
+			//		float nfz = nextra->vertices[ni * 3 + 2];
+			//		dd->vertex(fx, fy, fz, bcolor);
+			//		dd->vertex(nfx, nfy, nfz, rcolor);
+			//	}
+			//}
+			
+			//if (extra->header->x == 5 && extra->header->y == 4 && extra->header->layer == 0 && i == 6)
+			//{
+			//	dd->vertex(fx, fy, fz, rcolor);
+			//}
+   //         if (mesh->isBorderLinkValid(extra->linkIndices[i]))
+   //         {
+			//	dd->vertex(fx, fy, fz, rcolor);
+   //         }
+			//else if (mesh->isBorderInLink(extra->linkIndices[i]))
+			//{
+			//	dd->vertex(fx, fy, fz, bcolor);
+			//}
+			//unsigned short flagss(extra->neis[i]);
+			//if (!(flagss & 0x0400))
+			//	continue;
+			//dd->vertex(fx, fy, fz, bbcolor);
+            
+//			dd->vertex(fx, fy, fz, (extra->neis[i] & 0x80) ? gcolor : (extra->neis[i] & 0x40) ? bcolor : rcolor);
+//            dd->vertex(fx, fy, fz, i == 0 ? gcolor : i == 1 ? bcolor : rcolor);
+//            if (extra->neis[i] & 0x80 || extra->neis[i] & 0x40)
+//                if (!mesh->getBorderPoly(extra, i, outPolyIdx, outVertIdx) || outPolyIdx == -1)
+//                    dd->vertex(fx, fy, fz, rcolor);
+		}
+	}
+	dd->end();
+
+//	dd->begin(DU_DRAW_POINTS, 5.0f);
+//	for (int i(0); i < ntiles; ++i)
+//	{
+//		dtMeshExtra* extra(mesh->getExtraByIndex(i));
+//		if (!extra)
+//			continue;
+//
+//		for (int i(0); i < extra->header->vertCount; ++i)
+//		{
+//			unsigned short flag(extra->neis[i]);
+//			if (!(flag & 0x0400))
+//				continue;
+//
+//			if (extra->linkIndices[i] == DT_NULL_LINK)
+//				continue;
+//			dtAssert(extra->linkIndices[i] != DT_NULL_LINK);
+//			if (extra->links[extra->linkIndices[i]].borderId == 0)
+//				continue;
+//
+//			float fx = extra->vertices[i * 3 + 0];
+//			float fy = extra->vertices[i * 3 + 1];
+//			float fz = extra->vertices[i * 3 + 2];
+//			ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+//			dd->vertex(fx, fy, fz, gcolor);
+//		}
+//	}
+//	dd->end();
+
+//	dd->begin(DU_DRAW_LINES, 2.0f);
+//	for (int i(0); i < ntiles; ++i)
+//	{
+//		dtMeshExtra* extra(mesh->getExtraByIndex(i));
+//		if (!extra)
+//			continue;
+//        if (extra->header->x != 3 || extra->header->y != 2)
+//            continue;
+////        if (extra->header->layer != 2)
+////            continue;
+//		for (int j(0), k(0); j < extra->header->borderCount; ++j)
+//		{
+//			for (int p(extra->splits[j] - 1); k < extra->splits[j]; p = k++)
+//			{
+//				float pfx = extra->vertices[p * 3 + 0];
+//				float pfy = extra->vertices[p * 3 + 1];
+//				float pfz = extra->vertices[p * 3 + 2];
+//				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", pfx, pfy, pfz);
+//				dd->vertex(pfx, pfy, pfz, bcolor);
+//				float fx = extra->vertices[k * 3 + 0];
+//				float fy = extra->vertices[k * 3 + 1];
+//				float fz = extra->vertices[k * 3 + 2];
+//				ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+//				dd->vertex(fx, fy, fz, bcolor);
+//			}
+//		}
+//	}
+//	dd->end();
+    
+    if (vertices)
+        dtFree(vertices);
+    if (borders)
+        dtFree(borders);
+}
+
+
 enum DrawDetailType
 {
 	DRAWDETAIL_AREAS,
 	DRAWDETAIL_REGIONS,
 	DRAWDETAIL_CONTOURS,
-	DRAWDETAIL_MESH
+	DRAWDETAIL_MESH,
+	DRAWDETAIL_BORDER,
 };
 
 void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, int type)
 {
 	struct TileCacheBuildContext
 	{
-		inline TileCacheBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), lmesh(0), alloc(a) {}
+		inline TileCacheBuildContext(struct dtTileCacheAlloc* a) : layer(0), lcset(0), tcset(0), lmesh(0), alloc(a) {}
 		inline ~TileCacheBuildContext() { purge(); }
 		void purge()
 		{
@@ -522,11 +760,14 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 			layer = 0;
 			dtFreeTileCacheContourSet(alloc, lcset);
 			lcset = 0;
+            dtFreeTileCacheBorderSet(alloc, tcset);
+            tcset = 0;
 			dtFreeTileCachePolyMesh(alloc, lmesh);
 			lmesh = 0;
 		}
 		struct dtTileCacheLayer* layer;
 		struct dtTileCacheContourSet* lcset;
+        struct dtTileCacheBorderSet* tcset;
 		struct dtTileCachePolyMesh* lmesh;
 		struct dtTileCacheAlloc* alloc;
 	};
@@ -575,6 +816,14 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 										  params->maxSimplificationError, *bc.lcset);
 		if (dtStatusFailed(status))
 			return;
+
+		bc.tcset = dtAllocTileCacheBorderSet(talloc);
+		if (!bc.tcset)
+			return;
+		status = dtBuildTileCacheBorders(talloc, *bc.layer, *bc.lcset, *bc.tcset);
+		if (dtStatusFailed(status))
+			return;
+
 		if (type == DRAWDETAIL_CONTOURS)
 		{
 			duDebugDrawTileCacheContours(dd, *bc.lcset, tile->header->bmin, params->cs, params->ch);
@@ -593,7 +842,6 @@ void drawDetail(duDebugDraw* dd, dtTileCache* tc, const int tx, const int ty, in
 			duDebugDrawTileCachePolyMesh(dd, *bc.lmesh, tile->header->bmin, params->cs, params->ch);
 			continue;
 		}
-
 	}
 }
 
@@ -659,6 +907,7 @@ dtObstacleRef hitTestObstacle(const dtTileCache* tc, const float* sp, const floa
 	
 void drawObstacles(duDebugDraw* dd, const dtTileCache* tc)
 {
+	return;
 	// Draw obstacles
 	for (int i = 0; i < tc->getObstacleCount(); ++i)
 	{
@@ -721,6 +970,8 @@ public:
 			m_drawType = DRAWDETAIL_CONTOURS;
 		if (imguiCheck("Draw Mesh", m_drawType == DRAWDETAIL_MESH))
 			m_drawType = DRAWDETAIL_MESH;
+		if (imguiCheck("Draw Border", m_drawType == DRAWDETAIL_BORDER))
+			m_drawType = DRAWDETAIL_BORDER;
 	}
 
 	virtual void handleClick(const float* /*s*/, const float* p, bool /*shift*/)
@@ -780,11 +1031,14 @@ TempObstacleHilightTool::~TempObstacleHilightTool()
 class TempObstacleCreateTool : public SampleTool
 {
 	Sample_TempObstacles* m_sample;
+	float m_hitPos[3];
+	bool m_hitPosSet;
 	
 public:
 	
-	TempObstacleCreateTool() : m_sample(0)
+	TempObstacleCreateTool() : m_sample(0), m_hitPosSet(false)
 	{
+		m_hitPos[0] = m_hitPos[1] = m_hitPos[2] = 0.0f;
 	}
 	
 	virtual ~TempObstacleCreateTool();
@@ -813,6 +1067,8 @@ public:
 	
 	virtual void handleClick(const float* s, const float* p, bool shift)
 	{
+		m_hitPosSet = true;
+		rcVcopy(m_hitPos,p);
 		if (m_sample)
 		{
 			if (shift)
@@ -825,7 +1081,12 @@ public:
 	virtual void handleToggle() {}
 	virtual void handleStep() {}
 	virtual void handleUpdate(const float /*dt*/) {}
-	virtual void handleRender() {}
+	virtual void handleRender()
+	{
+		int tx=0, ty=0;
+		m_sample->getTilePos(m_hitPos, tx, ty);
+		m_sample->renderTempObstaclesTile(tx, ty, 0);
+	}
 	virtual void handleRenderOverlay(double* /*proj*/, double* /*model*/, int* /*view*/) { }
 };
 
@@ -849,7 +1110,7 @@ Sample_TempObstacles::Sample_TempObstacles() :
 {
 	resetCommonSettings();
 	
-	m_talloc = new LinearAllocator(32000);
+	m_talloc = new LinearAllocator(640000);
 	m_tcomp = new FastLZCompressor;
 	m_tmproc = new MeshProcess;
 	
@@ -1108,18 +1369,55 @@ void Sample_TempObstacles::handleRender()
 	renderToolStates();
 	
 	glDepthMask(GL_TRUE);
+
 }
 
 void Sample_TempObstacles::renderCachedTile(const int tx, const int ty, const int type)
 {
-	if (m_tileCache)
+	if (type == DRAWDETAIL_BORDER && m_navMesh)
+		drawBorders(m_ctx, &m_dd, m_navMesh, tx, ty);
+	else if (m_tileCache)
 		drawDetail(&m_dd,m_tileCache,tx,ty,type);
+	
+}
+
+void Sample_TempObstacles::renderTempObstaclesTile(const int tx, const int ty, const int type)
+{
+	if (m_navMesh)
+		drawBorders(m_ctx, &m_dd, m_navMesh, tx, ty);
 }
 
 void Sample_TempObstacles::renderCachedTileOverlay(const int tx, const int ty, double* proj, double* model, int* view)
 {
 	if (m_tileCache)
 		drawDetailOverlay(m_tileCache, tx, ty, proj, model, view);
+
+	char text[128];
+	int ntiles(m_navMesh->getMaxTiles());
+	for (int j(0); j < ntiles; ++j)
+	{
+		dtMeshExtra* extra(m_navMesh->getExtraByIndex(j));
+		if (!extra)
+			continue;
+		if (extra->header->x != tx || extra->header->y != ty)
+			continue;
+		for (int k(0), i(0); k < extra->header->borderCount; ++k)
+		{
+			for (; i < extra->splits[k]; ++i)
+			{
+				float fx = extra->vertices[i * 3 + 0];
+				float fy = extra->vertices[i * 3 + 1];
+				float fz = extra->vertices[i * 3 + 2];
+				m_ctx->log(RC_LOG_PROGRESS, "%.5f, %.5f, %.5f", fx, fy, fz);
+				GLdouble x, y, z;
+				if (gluProject((GLdouble)fx, (GLdouble)fy, (GLdouble)fz, model, proj, view, &x, &y, &z))
+				{
+					snprintf(text, 128, "(%d,%d)/%d(%.5f,%.5f,%.5f)", j, k, i, fx, fy, fz);
+					imguiDrawText((int)x, (int)y-25, IMGUI_ALIGN_CENTER, text, imguiRGBA(0,0,0,220));
+				}
+			}
+		}
+	}
 }
 
 void Sample_TempObstacles::handleRenderOverlay(double* proj, double* model, int* view)
@@ -1363,11 +1661,46 @@ bool Sample_TempObstacles::handleBuild()
 	}
 	printf("navmeshMemUsage = %.1f kB", navmeshMemUsage/1024.0f);
 		
-	
 	if (m_tool)
 		m_tool->init(this);
 	initToolStates(this);
 
+	//float pos[3] = {58.7448463f, -2.19668055f, 11.5687246f};
+	//float pos[3] = {56.4841690, -2.74019456, 10.2089949};
+	//float pos[3] = {57.1909370, -2.69959164, 10.2175446};
+	//float pos[3] = {58.1213150, -2.20300364, 11.7394905};
+	//float pos[3] = {58.4881783, -1.27281189, 14.2272034};
+	//addTempObstacle(pos);
+
+	//float pos0[3] = {56.6835022, -2.29753113, 12.4253578};
+	//float pos1[3] = {58.5515060, -2.40190125, 10.7828922};
+	//addTempObstacle(pos1);
+	//addTempObstacle(pos0);
+
+	//float pos0[3] = {42.6472168, -2.17915630, 12.3505487};
+	//addTempObstacle(pos0);
+	//float pos1[3] = {56.6835022, -2.79753113, 12.4253578};
+	//addTempObstacle(pos1);
+	//float pos2[3] = {58.5515060, -2.90190125, 10.7828922};
+	//addTempObstacle(pos2);
+
+	//float pos[3] = {0.958605766, -2.86292553, 10.1905499};
+	//addTempObstacle(pos);
+
+	//float pos0[3] = {43.8531494, -1.72279966, 10.5242290};
+	//addTempObstacle(pos0);
+	//float pos1[3] = {41.5657578, -2.05344534, 11.8093843};
+	//addTempObstacle(pos1);
+	//float pos2[3] = {43.2372398, -1.60974967, 10.4171171};
+	//addTempObstacle(pos2);
+
+	//float pos2[3] = { 43.6649742, -2.89632797, -18.8165359 };
+	//addTempObstacle(pos2);
+	//float pos1[3] = {43.9556122, -2.83635473, -16.6236897};
+	//addTempObstacle(pos1);
+
+	float pos0[3] = {20.8662682, 12.6533432, -60.8278465};
+	addTempObstacle(pos0);
 	return true;
 }
 
